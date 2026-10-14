@@ -1,0 +1,287 @@
+begin;
+create table if not exists public.rl_members (
+ email text primary key check(email=lower(email)), role text not null check(role in ('admin','staff','viewer'))
+);
+create or replace function public.rl_role() returns text language sql stable security definer set search_path=public as $$
+ select m.role from rl_members m join auth.users u on lower(u.email)=m.email where u.id=auth.uid() and u.email_confirmed_at is not null
+$$;
+create or replace function public.rl_write() returns boolean language sql stable security definer set search_path=public as $$ select coalesce(rl_role() in ('admin','staff'),false) $$;
+create table if not exists public.rl_settings (
+ id integer primary key default 1 check(id=1), company jsonb not null, verifactu_enabled boolean not null default false,
+ verifactu_environment text not null default 'test' check(verifactu_environment in ('test','production')), production_started date, fiscal_system jsonb not null default '{}',
+ created_at timestamptz not null default now()
+);
+create table if not exists public.rl_clients (
+ id uuid primary key default gen_random_uuid(), name text not null check(length(trim(name))>0), tax_id text not null default '', address text not null default '',
+ email text not null default '', phone text not null default '', notes text not null default '', active boolean not null default true
+);
+create table if not exists public.rl_documents (
+ id uuid primary key, name text not null, mime text not null, sha256 text not null, content_base64 text not null, source text not null
+);
+create table if not exists public.rl_sheets (
+ id uuid primary key, name text not null unique, period text not null, period_inferred boolean not null default false,
+ cells jsonb not null, summary jsonb not null default '{}', position integer not null
+);
+create table if not exists public.rl_students (
+ id uuid primary key default gen_random_uuid(), name text not null check(length(trim(name))>0), phone text not null default '', email text not null default '',
+ notes text not null default '', active boolean not null default true, client_id uuid references rl_clients(id)
+);
+create table if not exists public.rl_enrollments (
+ id uuid primary key default gen_random_uuid(), student_id uuid references rl_students(id), period text not null check(period ~ '^\d{4}-\d{2}$'),
+ category text not null, schedule text not null default '', rate numeric(12,4), rate_label text not null default '',
+ units numeric(12,2), month_hours numeric(12,2), pack_units numeric(12,2), paid numeric(12,2), advance numeric(12,2), expected numeric(12,2),
+ class_days text not null default '', notes text not null default '', billing_mode text not null default 'manual' check(billing_mode in ('hourly','pack','manual')),
+ source_sheet uuid references rl_sheets(id), source_row integer, version integer not null default 1,
+ unique(source_sheet,source_row), check(rate is null or rate>=0), check(month_hours is null or month_hours>=0)
+);
+create table if not exists public.rl_expenses (
+ id uuid primary key default gen_random_uuid(), date date not null, description text not null, category text not null default 'General',
+ amount numeric(12,2) not null check(amount>=0), status text not null check(status in ('planned','paid')), notes text not null default '',
+ source_sheet uuid references rl_sheets(id), source_cell text
+);
+create table if not exists public.rl_invoices (
+ id uuid primary key default gen_random_uuid(), number text unique, client_id uuid references rl_clients(id), client_snapshot jsonb not null,
+ issuer_snapshot jsonb not null, date date not null, due_date date, project_date date, location text not null default '',
+ lines jsonb not null check(jsonb_typeof(lines)='array'), subtotal numeric(12,2) not null, vat numeric(12,2) not null,
+ withholding_rate numeric(5,2) not null default 0 check(withholding_rate between 0 and 100), withholding numeric(12,2) not null,
+ total numeric(12,2) not null, status text not null check(status in ('draft','issued','imported')),
+ invoice_type text not null default 'F1' check(invoice_type in ('F1','R1','R4')), rectifies uuid references rl_invoices(id),
+ notes text not null default '', exemption text not null default '', payment_terms text not null default '',
+ document_id uuid references rl_documents(id), environment text not null default 'production' check(environment in ('test','production')),
+ payment_reviewed boolean not null default false, created_at timestamptz not null default now()
+);
+create table if not exists public.rl_sequences (
+ year integer not null, series text not null, environment text not null, next_value integer not null, primary key(year,series,environment)
+);
+create table if not exists public.rl_payments (
+ id uuid primary key default gen_random_uuid(), date date not null, amount numeric(12,2) not null check(amount>0), method text not null,
+ description text not null, invoice_id uuid references rl_invoices(id), enrollment_id uuid references rl_enrollments(id),
+ notes text not null default '', created_at timestamptz not null default now(), check(invoice_id is null or enrollment_id is null)
+);
+create table if not exists public.rl_hours (
+ id uuid primary key default gen_random_uuid(), enrollment_id uuid not null references rl_enrollments(id), date date not null,
+ units numeric(12,2) not null check(units<>0), kind text not null check(kind in ('class','pack','adjustment')), note text not null,
+ request_id uuid not null unique, created_at timestamptz not null default now()
+);
+create table if not exists public.rl_audit (
+ id bigint generated always as identity primary key, at timestamptz not null default now(), user_id uuid, action text not null,
+ entity text not null, record_id text, before_data jsonb, after_data jsonb
+);
+create table if not exists public.rl_fiscal_records (
+ id uuid primary key default gen_random_uuid(), seq bigint generated always as identity unique, invoice_id uuid not null unique references rl_invoices(id),
+ environment text not null check(environment in ('test','production')), previous_hash text not null default '', hash text not null, hash_input text not null,
+ payload jsonb not null, generated_at timestamptz not null, status text not null default 'pending' check(status in ('pending','sending','accepted','accepted_with_errors','rejected','uncertain')),
+ attempts integer not null default 0, response text, csv text, last_attempt timestamptz, next_attempt timestamptz not null default now(), lease_id uuid
+);
+create or replace function public.rl_audit_change() returns trigger language plpgsql security definer set search_path=public as $$
+begin
+ insert into rl_audit(user_id,action,entity,record_id,before_data,after_data)
+ values(auth.uid(),TG_OP,TG_TABLE_NAME,coalesce(to_jsonb(NEW)->>'id',to_jsonb(OLD)->>'id'),to_jsonb(OLD),to_jsonb(NEW));
+ return coalesce(NEW,OLD);
+end $$;
+create or replace function public.rl_immutable_invoice() returns trigger language plpgsql set search_path=public as $$
+begin
+ if OLD.status<>'draft' and (TG_OP='DELETE' or (to_jsonb(NEW)-'payment_reviewed') is distinct from (to_jsonb(OLD)-'payment_reviewed')) then
+ raise exception 'Factura emitida inalterable. Emita una factura rectificativa.'; end if;
+ return coalesce(NEW,OLD);
+end $$;
+drop trigger if exists immutable_invoice on rl_invoices;
+create trigger immutable_invoice before update or delete on rl_invoices for each row execute function rl_immutable_invoice();
+create or replace function public.rl_immutable_fiscal() returns trigger language plpgsql set search_path=public as $$
+begin
+ if TG_OP='DELETE' or (to_jsonb(NEW)-array['status','attempts','response','csv','last_attempt','next_attempt','lease_id']) is distinct from (to_jsonb(OLD)-array['status','attempts','response','csv','last_attempt','next_attempt','lease_id']) then raise exception 'Registro fiscal inalterable'; end if;
+ return NEW;
+end $$;
+drop trigger if exists immutable_fiscal on rl_fiscal_records;
+create trigger immutable_fiscal before update or delete on rl_fiscal_records for each row execute function rl_immutable_fiscal();
+do $$ declare t text; begin
+ foreach t in array array['rl_members','rl_settings','rl_clients','rl_documents','rl_sheets','rl_students','rl_enrollments','rl_expenses','rl_invoices','rl_sequences','rl_payments','rl_hours','rl_audit','rl_fiscal_records'] loop
+ execute format('alter table public.%I enable row level security',t);
+ execute format('revoke all on public.%I from anon, authenticated',t);
+ execute format('grant select on public.%I to authenticated',t);
+ execute format('drop policy if exists member_read on public.%I',t);
+ execute format('create policy member_read on public.%I for select to authenticated using (public.rl_role() is not null)',t);
+ end loop;
+ foreach t in array array['rl_clients','rl_students','rl_expenses'] loop
+ execute format('grant insert, update on public.%I to authenticated',t);
+ execute format('drop policy if exists member_write on public.%I',t);
+ execute format('create policy member_write on public.%I for all to authenticated using(public.rl_write()) with check(public.rl_write())',t);
+ end loop;
+ foreach t in array array['rl_settings','rl_clients','rl_students','rl_expenses','rl_enrollments','rl_invoices','rl_payments','rl_hours','rl_members','rl_fiscal_records'] loop
+ execute format('drop trigger if exists audit_change on public.%I',t);
+ execute format('create trigger audit_change after insert or update or delete on public.%I for each row execute function public.rl_audit_change()',t);
+ end loop;
+end $$;
+create index if not exists enrollment_period on rl_enrollments(period);
+create index if not exists invoice_date on rl_invoices(date);
+create index if not exists payments_invoice on rl_payments(invoice_id);
+create index if not exists fiscal_queue on rl_fiscal_records(status,next_attempt);
+
+create or replace function public.rl_save_enrollment(p jsonb) returns uuid language plpgsql security definer set search_path=public as $$
+declare rid uuid; begin
+ if not rl_write() then raise exception 'Acceso denegado'; end if;
+ rid:=coalesce((p->>'id')::uuid,gen_random_uuid());
+ if p ? 'id' then
+ update rl_enrollments set category=p->>'category',schedule=coalesce(p->>'schedule',''),rate=nullif(p->>'rate','')::numeric,
+ rate_label=coalesce(p->>'rate_label',''),units=nullif(p->>'units','')::numeric,month_hours=nullif(p->>'month_hours','')::numeric,
+ pack_units=nullif(p->>'pack_units','')::numeric,paid=nullif(p->>'paid','')::numeric,advance=nullif(p->>'advance','')::numeric,
+ expected=nullif(p->>'expected','')::numeric,class_days=coalesce(p->>'class_days',''),notes=coalesce(p->>'notes',''),billing_mode=p->>'billing_mode',version=version+1
+ where id=rid and version=(p->>'version')::integer;
+ if not found then raise exception 'Otro usuario ha modificado esta fila. Recargue antes de guardar.'; end if;
+ else
+ insert into rl_enrollments(id,student_id,period,category,schedule,rate,rate_label,billing_mode,month_hours,units,pack_units,paid,advance,expected,notes)
+ values(rid,(p->>'student_id')::uuid,p->>'period',p->>'category',coalesce(p->>'schedule',''),nullif(p->>'rate','')::numeric,coalesce(p->>'rate_label',''),coalesce(p->>'billing_mode','manual'),0,0,0,0,0,0,coalesce(p->>'notes',''));
+ end if; return rid;
+end $$;
+create or replace function public.rl_log_hours(p jsonb) returns uuid language plpgsql security definer set search_path=public as $$
+declare e rl_enrollments; u numeric; k text; rid uuid; begin
+ if not rl_write() then raise exception 'Acceso denegado'; end if;
+ select id into rid from rl_hours where request_id=(p->>'request_id')::uuid; if found then return rid; end if;
+ select * into strict e from rl_enrollments where id=(p->>'enrollment_id')::uuid for update;
+ u:=(p->>'units')::numeric; k:=p->>'kind';
+ if u=0 or (k in ('class','pack') and u<0) then raise exception 'Cantidad no válida'; end if;
+ if to_char((p->>'date')::date,'YYYY-MM')<>e.period then raise exception 'La fecha debe pertenecer al mes seleccionado'; end if;
+ if length(trim(coalesce(p->>'note','')))=0 then raise exception 'Indique un concepto'; end if;
+ if k='class' and e.billing_mode='hourly' and e.rate is null then raise exception 'Configure la tarifa por hora'; end if;
+ if k='class' and e.billing_mode='pack' and coalesce(e.pack_units,0)<u then raise exception 'No quedan suficientes unidades en el bono'; end if;
+ insert into rl_hours(enrollment_id,date,units,kind,note,request_id) values(e.id,(p->>'date')::date,u,k,p->>'note',(p->>'request_id')::uuid) returning id into rid;
+ update rl_enrollments set
+ month_hours=coalesce(month_hours,0)+case when k in ('class','adjustment') then u else 0 end,
+ pack_units=coalesce(pack_units,0)+case when k='pack' then u when k='class' and billing_mode='pack' then -u else 0 end,
+ expected=coalesce(expected,0)+case when k='class' and billing_mode='hourly' then round(u*rate,2) else 0 end,
+ class_days=class_days||case when k='class' then ' · '||(p->>'date')||' ('||u||')' else '' end,version=version+1 where id=e.id;
+ return rid;
+end $$;
+create or replace function public.rl_clone_month(source_period text,target_period text) returns integer language plpgsql security definer set search_path=public as $$
+declare n integer; begin
+ if not rl_write() then raise exception 'Acceso denegado'; end if;
+ perform pg_advisory_xact_lock(44192);
+ if exists(select 1 from rl_enrollments where period=target_period) then raise exception 'El mes de destino ya tiene registros'; end if;
+ insert into rl_enrollments(student_id,period,category,schedule,rate,rate_label,billing_mode,units,month_hours,pack_units,paid,advance,expected,notes)
+ select student_id,target_period,category,schedule,rate,rate_label,billing_mode,0,0,case when billing_mode='pack' then pack_units else 0 end,0,0,0,'' from rl_enrollments e
+ where period=source_period and (student_id is null or exists(select 1 from rl_students s where s.id=e.student_id and s.active));
+ get diagnostics n=row_count; return n;
+end $$;
+create or replace function public.rl_record_payment(p jsonb) returns uuid language plpgsql security definer set search_path=public as $$
+declare rid uuid; v numeric; inv rl_invoices; e rl_enrollments; begin
+ if not rl_write() then raise exception 'Acceso denegado'; end if;
+ rid:=(p->>'id')::uuid; if rid is null then raise exception 'Falta identificador de operación'; end if;
+ perform pg_advisory_xact_lock(hashtext(rid::text));
+ if exists(select 1 from rl_payments where id=rid) then return rid; end if;
+ v:=(p->>'amount')::numeric;
+ if p->>'invoice_id' is not null then
+ select * into strict inv from rl_invoices where id=(p->>'invoice_id')::uuid for update;
+ if inv.status='draft' or inv.environment='test' then raise exception 'No se puede cobrar un borrador o factura de prueba'; end if;
+ if v+coalesce((select sum(amount) from rl_payments where invoice_id=inv.id),0)>inv.total then raise exception 'El cobro supera el saldo de la factura'; end if;
+ update rl_invoices set payment_reviewed=true where id=inv.id;
+ end if;
+ if p->>'enrollment_id' is not null then
+ select * into strict e from rl_enrollments where id=(p->>'enrollment_id')::uuid for update;
+ update rl_enrollments set paid=coalesce(paid,0)+v,expected=greatest(0,coalesce(expected,0)-v),version=version+1 where id=e.id;
+ end if;
+ insert into rl_payments(id,date,amount,method,description,invoice_id,enrollment_id,notes)
+ values(rid,(p->>'date')::date,v,p->>'method',p->>'description',(p->>'invoice_id')::uuid,(p->>'enrollment_id')::uuid,coalesce(p->>'notes',''));
+ return rid;
+end $$;
+create or replace function public.rl_save_invoice(p jsonb) returns uuid language plpgsql security definer set search_path=public as $$
+declare rid uuid; c rl_clients; company jsonb; item jsonb; b numeric:=0; v numeric:=0; w numeric; line_base numeric; ls jsonb:='[]'; q numeric; price numeric; discount numeric; tax numeric; begin
+ if not rl_write() then raise exception 'Acceso denegado'; end if;
+ rid:=coalesce((p->>'id')::uuid,gen_random_uuid());
+ if exists(select 1 from rl_invoices where id=rid and status<>'draft') then raise exception 'La factura ya está emitida'; end if;
+ select * into strict c from rl_clients where id=(p->>'client_id')::uuid;
+ select s.company into company from rl_settings s where id=1;
+ if jsonb_array_length(p->'lines') not between 1 and 1000 then raise exception 'Añada entre una y mil líneas'; end if;
+ for item in select value from jsonb_array_elements(p->'lines') loop
+ q:=(item->>'quantity')::numeric; price:=(item->>'price')::numeric; discount:=coalesce((item->>'discount')::numeric,0); tax:=coalesce((item->>'vat_rate')::numeric,0);
+ if q::text in ('NaN','Infinity','-Infinity') or price::text in ('NaN','Infinity','-Infinity') then raise exception 'Cantidad y precio deben ser números finitos'; end if;
+ if q<=0 or discount not between 0 and 100 or tax not between 0 and 100 or length(trim(coalesce(item->>'description','')))=0 or (price<0 and coalesce(p->>'invoice_type','F1')='F1') then raise exception 'Línea no válida'; end if;
+ if q is null or price is null then raise exception 'Cantidad y precio obligatorios'; end if;
+ line_base:=round(q*price*(1-discount/100),2); b:=b+line_base; v:=v+round(line_base*tax/100,2);
+ ls:=ls||jsonb_build_array(item||jsonb_build_object('base',line_base,'vat',round(line_base*tax/100,2)));
+ end loop;
+ w:=round(b*coalesce((p->>'withholding_rate')::numeric,0)/100,2);
+ if coalesce(p->>'invoice_type','F1')<>'F1' and nullif(p->>'rectifies','') is null then raise exception 'Seleccione la factura rectificada'; end if;
+ insert into rl_invoices(id,client_id,client_snapshot,issuer_snapshot,date,due_date,project_date,location,lines,subtotal,vat,withholding_rate,withholding,total,status,invoice_type,rectifies,notes,exemption,payment_terms,environment)
+ values(rid,c.id,to_jsonb(c),company,(p->>'date')::date,nullif(p->>'due_date','')::date,nullif(p->>'project_date','')::date,coalesce(p->>'location',''),ls,b,v,coalesce((p->>'withholding_rate')::numeric,0),w,b+v-w,'draft',coalesce(p->>'invoice_type','F1'),nullif(p->>'rectifies','')::uuid,coalesce(p->>'notes',''),coalesce(p->>'exemption',''),coalesce(p->>'payment_terms',''),coalesce(p->>'environment','production'))
+ on conflict(id) do update set client_id=excluded.client_id,client_snapshot=excluded.client_snapshot,issuer_snapshot=excluded.issuer_snapshot,date=excluded.date,due_date=excluded.due_date,project_date=excluded.project_date,location=excluded.location,lines=excluded.lines,subtotal=excluded.subtotal,vat=excluded.vat,withholding_rate=excluded.withholding_rate,withholding=excluded.withholding,total=excluded.total,invoice_type=excluded.invoice_type,rectifies=excluded.rectifies,notes=excluded.notes,exemption=excluded.exemption,payment_terms=excluded.payment_terms,environment=excluded.environment;
+ return rid;
+end $$;
+create or replace function public.rl_issue_invoice(invoice uuid) returns text language plpgsql security definer set search_path=public as $$
+declare i rl_invoices; s rl_settings; n integer; y integer; ser text; num text; prev rl_fiscal_records; h text; inp text; stamp text; gen timestamptz:=clock_timestamp(); begin
+ if not rl_write() then raise exception 'Acceso denegado'; end if;
+ perform pg_advisory_xact_lock(44193);
+ select * into strict i from rl_invoices where id=invoice for update;
+ if i.status<>'draft' then return i.number; end if;
+ select * into strict s from rl_settings where id=1 for update;
+ if trim(coalesce(i.client_snapshot->>'tax_id',''))='' or trim(coalesce(i.issuer_snapshot->>'tax_id',''))='' then raise exception 'Falta el NIF del cliente o emisor'; end if;
+ if exists(select 1 from jsonb_array_elements(i.lines) l where (l->>'vat_rate')::numeric=0) and trim(i.exemption)='' then raise exception 'Indique el motivo de exención para las líneas sin IVA'; end if;
+ if i.date>(current_timestamp at time zone 'Europe/Madrid')::date then raise exception 'No se puede emitir con fecha futura'; end if;
+ if s.verifactu_enabled and i.environment<>s.verifactu_environment then raise exception 'El entorno de la factura no coincide con VeriFactu'; end if;
+ if i.invoice_type<>'F1' and not exists(select 1 from rl_invoices x where x.id=i.rectifies and x.status<>'draft' and x.environment=i.environment and x.client_id=i.client_id) then raise exception 'Factura rectificada no válida'; end if;
+ y:=extract(year from i.date); ser:=case when i.invoice_type='F1' then 'F' else 'R' end;
+ if exists(select 1 from rl_invoices x where x.environment=i.environment and x.status='issued' and extract(year from x.date)=y and x.date>i.date and (case when x.invoice_type='F1' then 'F' else 'R' end)=ser) then raise exception 'Fecha anterior a la última factura de la serie'; end if;
+ insert into rl_sequences values(y,ser,i.environment,1) on conflict do nothing;
+ update rl_sequences set next_value=next_value+1 where year=y and series=ser and environment=i.environment returning next_value-1 into n;
+ num:=case when i.environment='test' then 'TEST-' else '' end||ser||'-'||y||'-'||lpad(n::text,4,'0');
+ update rl_invoices set number=num,status='issued' where id=i.id returning * into i;
+ if s.verifactu_enabled then
+ select * into prev from rl_fiscal_records where environment=i.environment order by seq desc limit 1;
+ stamp:=to_char(gen at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS')||'+00:00';
+ inp:='IDEmisorFactura='||(i.issuer_snapshot->>'tax_id')||'&NumSerieFactura='||num||'&FechaExpedicionFactura='||to_char(i.date,'DD-MM-YYYY')||'&TipoFactura='||i.invoice_type||'&CuotaTotal='||i.vat::text||'&ImporteTotal='||(i.subtotal+i.vat)::numeric(12,2)::text||'&Huella='||coalesce(prev.hash,'')||'&FechaHoraHusoGenRegistro='||stamp;
+ h:=upper(encode(sha256(convert_to(inp,'UTF8')),'hex'));
+ insert into rl_fiscal_records(invoice_id,environment,previous_hash,hash,hash_input,payload,generated_at)
+ values(i.id,i.environment,coalesce(prev.hash,''),h,inp,jsonb_build_object('invoice',to_jsonb(i),'timestamp',stamp,'previous',prev.payload->'invoice','system',s.fiscal_system),gen);
+ if i.environment='production' then update rl_settings set production_started=coalesce(production_started,i.date) where id=1; end if;
+ end if; return num;
+end $$;
+create or replace function public.rl_save_company(p jsonb) returns void language plpgsql security definer set search_path=public as $$
+begin
+ if rl_role() is distinct from 'admin' then raise exception 'Solo administración'; end if;
+ if length(trim(coalesce(p->>'name','')))=0 or length(trim(coalesce(p->>'tax_id','')))=0 then raise exception 'Nombre y NIF obligatorios'; end if;
+ if exists(select 1 from rl_fiscal_records where environment='production') and (select company->>'tax_id' from rl_settings where id=1)<>p->>'tax_id' then raise exception 'El NIF está vinculado a registros fiscales emitidos'; end if;
+ update rl_settings set company=p||jsonb_build_object('name',trim(p->>'name'),'tax_id',upper(trim(p->>'tax_id'))) where id=1;
+end $$;
+create or replace function public.rl_set_verifactu(enabled boolean,environment text,system_data jsonb default '{}') returns void language plpgsql security definer set search_path=public as $$
+declare s rl_settings; begin
+ if coalesce(auth.role(),'')<>'service_role' then raise exception 'Solo servidor autorizado'; end if;
+ select * into strict s from rl_settings where id=1 for update;
+ if s.production_started is not null and extract(year from s.production_started)=extract(year from current_date) and (not enabled or environment<>'production') then raise exception 'La remisión en producción debe mantenerse hasta finalizar el año natural'; end if;
+ if exists(select 1 from rl_fiscal_records where status in ('pending','sending','uncertain')) and (not enabled or environment<>s.verifactu_environment) then raise exception 'Hay registros pendientes de remisión'; end if;
+ update rl_settings set verifactu_enabled=enabled,verifactu_environment=environment,fiscal_system=case when enabled then system_data else fiscal_system end where id=1;
+end $$;
+create or replace function public.rl_claim_fiscal(record_id uuid) returns jsonb language plpgsql security definer set search_path=public as $$
+declare r rl_fiscal_records; token uuid:=gen_random_uuid(); begin
+ if coalesce(auth.role(),'')<>'service_role' then raise exception 'Solo servidor autorizado'; end if;
+ select * into strict r from rl_fiscal_records where id=record_id for update;
+ perform pg_advisory_xact_lock(44195);
+ if r.status in ('accepted','accepted_with_errors','rejected') then raise exception 'Registro finalizado'; end if;
+ if r.next_attempt>now() or (r.status='sending' and r.last_attempt>now()-interval '2 minutes') then raise exception 'Espere antes de reintentar'; end if;
+ if exists(select 1 from rl_fiscal_records x where x.id<>r.id and x.environment=r.environment and ((x.status='sending' and x.last_attempt>now()-interval '2 minutes') or (x.last_attempt is not null and x.next_attempt>now()))) then raise exception 'Espere el intervalo de envío indicado por AEAT'; end if;
+ if exists(select 1 from rl_fiscal_records where environment=r.environment and seq<r.seq and status in ('pending','sending','uncertain')) then raise exception 'Remita primero los registros anteriores'; end if;
+ update rl_fiscal_records set status='sending',lease_id=token,attempts=attempts+1,last_attempt=now() where id=r.id returning * into r;
+ return to_jsonb(r);
+end $$;
+create or replace function public.rl_finish_fiscal(p jsonb) returns void language plpgsql security definer set search_path=public as $$
+begin
+ if coalesce(auth.role(),'')<>'service_role' then raise exception 'Solo servidor autorizado'; end if;
+ update rl_fiscal_records set status=p->>'status',response=left(p->>'response',100000),csv=p->>'csv',next_attempt=now()+make_interval(secs=>greatest(60,least(3600,coalesce((p->>'wait')::integer,60)))),lease_id=null
+ where id=(p->>'id')::uuid and lease_id=(p->>'lease_id')::uuid and status='sending';
+ if not found then raise exception 'Respuesta de envío obsoleta'; end if;
+end $$;
+create or replace function public.rl_set_member(member_email text,member_role text) returns void language plpgsql security definer set search_path=public as $$
+begin
+ if rl_role() is distinct from 'admin' then raise exception 'Solo administración'; end if;
+ if member_email !~ '^[^@ ]+@[^@ ]+\.[^@ ]+$' then raise exception 'Correo no válido'; end if;
+ if lower(member_email)=(select lower(email) from auth.users where id=auth.uid()) and member_role<>'admin' then raise exception 'No puede quitarse sus permisos'; end if;
+ insert into rl_members values(lower(trim(member_email)),member_role) on conflict(email) do update set role=excluded.role;
+end $$;
+do $$ declare r record; begin
+ for r in select p.oid::regprocedure sig from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname like 'rl_%' loop
+ execute 'revoke all on function '||r.sig||' from public, anon';
+ execute 'grant execute on function '||r.sig||' to authenticated';
+ end loop;
+end $$;
+-- Los datos originales y la semilla se añaden debajo. No se publica información personal en el frontend.
+revoke execute on function rl_set_verifactu(boolean,text,jsonb),rl_claim_fiscal(uuid),rl_finish_fiscal(jsonb) from authenticated;
+grant execute on function rl_set_verifactu(boolean,text,jsonb),rl_claim_fiscal(uuid),rl_finish_fiscal(jsonb) to service_role;
+grant select on rl_settings,rl_fiscal_records,rl_invoices to service_role;

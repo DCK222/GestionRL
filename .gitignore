@@ -1,0 +1,11 @@
+node_modules/
+.next/
+.env*
+!.env.example
+private-import/
+deliverables/
+test-results/
+playwright-report/
+*.tsbuildinfo
+scripts/build_import.py
+scripts/inspect_sources.py

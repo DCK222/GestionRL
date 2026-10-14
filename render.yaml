@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: roboticlab-gestion
+    runtime: node
+    region: frankfurt
+    plan: free
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: 22.16.0
+      - key: NEXT_PUBLIC_SUPABASE_URL
+        value: https://qbiqnlhzdovdrglihttg.supabase.co
+      - key: NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
+        value: sb_publishable_hr25_jZQnPpRMK3ex6U7xQ_JKQuRnbj
+      - key: VERIFACTU_PRODUCTION_APPROVED
+        value: "false"
