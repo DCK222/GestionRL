@@ -5,7 +5,8 @@ out=root/'deliverables';out.mkdir(exist_ok=True)
 files=[root/n for n in ['package.json','package-lock.json','tsconfig.json','next-env.d.ts','next.config.ts','render.yaml','README.md','.gitignore','.env.example']]
 for folder in ['src','public','docs','tests']:
  files.extend(p for p in (root/folder).rglob('*') if p.is_file())
-files.extend(root/'scripts'/n for n in ['test-database.ts','validate_xml.py'])
+files.extend(root/'scripts'/n for n in ['test-database.ts','validate_xml.py','import-supabase.ps1'])
+shutil.copy2(root/'scripts/import-supabase.ps1',out/'import-supabase.ps1')
 with zipfile.ZipFile(out/'roboticlab-aplicacion.zip','w',zipfile.ZIP_DEFLATED,compresslevel=9) as z:
  for p in files:z.write(p,p.relative_to(root).as_posix())
 shutil.copy2(root/'render.yaml',out/'render.yaml')

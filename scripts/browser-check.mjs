@@ -19,7 +19,8 @@ const admin = (
 await db.query("select set_config('request.jwt.claim.sub',$1,false)", [admin]);
 await db.exec("set role authenticated");
 const out = "private-import/test-results";
-assert.equal((await fetch("http://localhost:3000/api/verifactu")).status, 401);
+const baseURL = process.env.ROBOTICLAB_TEST_URL || "http://localhost:3000";
+assert.equal((await fetch(`${baseURL}/api/verifactu`)).status, 401);
 await fs.mkdir(out, { recursive: true });
 const browser = await chromium.launch({
   executablePath: "C:/Program Files/Google/Chrome/Application/chrome.exe",
@@ -182,7 +183,7 @@ await page.route("**/api/verifactu", (route) =>
   }),
 );
 try {
-  await page.goto("http://localhost:3000");
+  await page.goto(baseURL);
   await page.getByRole("heading", { name: "Bienvenido de nuevo" }).waitFor();
   await page.screenshot({
     path: out + "/login.png",
@@ -209,11 +210,50 @@ try {
   await page
     .getByRole("button", { name: "Nueva factura", exact: true })
     .click();
+  // Adding a row must work even while required fields on the first row are empty.
+  await page.getByRole("button", { name: "Añadir línea", exact: true }).click();
+  assert.equal(await page.locator(".line-editor tbody tr").count(), 2);
+  assert.equal(
+    await page
+      .getByLabel("Descripción 2", { exact: true })
+      .evaluate((el) => el === document.activeElement),
+    true,
+  );
+  await page
+    .getByLabel("Descripción 2", { exact: true })
+    .fill("Concepto que se eliminará");
+  await page
+    .getByRole("button", { name: "Añadir otra línea", exact: true })
+    .click();
+  await page
+    .getByLabel("Descripción 3", { exact: true })
+    .fill("Taller adicional de robótica");
+  await page.getByLabel("Cantidad 3", { exact: true }).fill("3");
+  await page.getByLabel("Precio 3", { exact: true }).fill("40");
+  await page.getByLabel("Descuento 3", { exact: true }).fill("10");
+  await page.getByLabel("IVA 3", { exact: true }).selectOption("21");
+  await page
+    .getByRole("button", { name: "Eliminar línea 2", exact: true })
+    .click();
+  assert.equal(await page.locator(".line-editor tbody tr").count(), 2);
+  assert.equal(
+    await page.getByLabel("Descripción 2", { exact: true }).inputValue(),
+    "Taller adicional de robótica",
+  );
   await page
     .getByLabel("Descripción 1", { exact: true })
     .fill("Sesión de prueba del navegador");
   await page.getByLabel("Cantidad 1", { exact: true }).fill("2");
   await page.getByLabel("Precio 1", { exact: true }).fill("25");
+  await page.getByLabel("Retención IRPF (%)", { exact: true }).fill("15");
+  assert.match(
+    await page.locator("dialog[open] .invoice-totals .total").innerText(),
+    /156,98/,
+  );
+  await page.screenshot({
+    path: out + "/invoice-multiple-lines.png",
+    fullPage: true,
+  });
   await page
     .getByRole("button", { name: "Guardar borrador", exact: true })
     .click();
@@ -221,6 +261,54 @@ try {
     .getByText("Borrador guardado. Puedes revisarlo antes de emitir.")
     .waitFor();
   await page.getByRole("button", { name: "Borrador", exact: true }).click();
+  const draftRow = (
+    await db.query(
+      "select lines,subtotal,vat,withholding,total from rl_invoices where status='draft'",
+    )
+  ).rows[0];
+  assert.equal(draftRow.lines.length, 2);
+  assert.equal(Number(draftRow.subtotal), 158);
+  assert.equal(Number(draftRow.vat), 22.68);
+  assert.equal(Number(draftRow.withholding), 23.7);
+  assert.equal(Number(draftRow.total), 156.98);
+  assert.equal(await page.locator(".invoice-lines tbody tr").count(), 2);
+  await page
+    .getByRole("button", { name: "Editar borrador", exact: true })
+    .click();
+  assert.equal(
+    await page.getByLabel("Descripción 2", { exact: true }).inputValue(),
+    "Taller adicional de robótica",
+  );
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("button", { name: "Añadir línea", exact: true }).click();
+  await page
+    .getByLabel("Descripción 3", { exact: true })
+    .fill("Concepto móvil");
+  assert.equal(await page.locator(".line-editor tbody tr").count(), 3);
+  const editorDialog = page
+    .locator("dialog[open]")
+    .filter({ has: page.locator(".line-editor") });
+  assert.equal(
+    await editorDialog.evaluate((el) => el.scrollWidth > el.clientWidth),
+    false,
+  );
+  await page.screenshot({
+    path: out + "/invoice-multiple-lines-mobile.png",
+    fullPage: true,
+  });
+  await page
+    .getByRole("button", { name: "Eliminar línea 3", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Guardar borrador", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Editar borrador", exact: true })
+    .waitFor();
+  await page.setViewportSize({ width: 1440, height: 1080 });
+  console.log(
+    "PASS multiple invoice lines: add, remove, save, reopen, totals and mobile layout",
+  );
   await page.getByRole("button", { name: "Emitir", exact: true }).click();
   await page
     .getByRole("button", { name: "Emitir factura", exact: true })

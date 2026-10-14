@@ -12,7 +12,45 @@ async function main() {
  create function auth.role() returns text language sql stable as $$select nullif(current_setting('request.jwt.claim.role',true),'')$$;
  grant usage on schema auth,public to anon,authenticated,service_role;grant execute on all functions in schema auth to anon,authenticated,service_role;`);
   const sql = await fs.readFile("deliverables/supabase-roboticlab.sql", "utf8");
-  await db.exec(sql);
+  const useParts = process.env.ROBOTICLAB_SQL_PARTS === "1";
+  const partsFolder = "deliverables/sql-por-partes";
+  const partManifest = useParts
+    ? JSON.parse(await fs.readFile(`${partsFolder}/manifest.json`, "utf8"))
+    : null;
+  let firstImport = true;
+  async function runImport() {
+    if (!useParts) {
+      await db.exec(sql);
+      return;
+    }
+    for (let index = 0; index < partManifest.files.length; index++) {
+      const item = partManifest.files[index];
+      const bytes = await fs.readFile(`${partsFolder}/${item.file}`);
+      assert.ok(bytes.length < 450_000);
+      assert.equal(createHash("sha256").update(bytes).digest("hex"), item.sha256);
+      await db.exec(bytes.toString("utf8"));
+      if (firstImport && index === 0) {
+        await assert.rejects(
+          () => db.exec(partContents[2]),
+          /Primero ejecuta correctamente la parte 002/,
+        );
+        await db.exec("rollback");
+      }
+    }
+    firstImport = false;
+    const documents = await db.query<{content_base64: string; sha256: string}>(
+      "select content_base64,sha256 from rl_documents",
+    );
+    for (const document of documents.rows) {
+      assert.equal(createHash("sha256").update(Buffer.from(document.content_base64, "base64")).digest("hex"), document.sha256);
+    }
+    assert.equal((await db.query<{n: number}>("select count(*)::int n from rl_import_chunks")).rows[0].n, 0);
+    console.log(`PASS: ${partManifest.files.length} partes independientes y documentos íntegros`);
+  }
+  const partContents: string[] = useParts
+    ? await Promise.all(partManifest.files.map((item: {file: string}) => fs.readFile(`${partsFolder}/${item.file}`, "utf8")))
+    : [];
+  await runImport();
   console.log("PASS: SQL completo ejecutado");
   const one = async (q: string, args: unknown[] = []) =>
     ((await db.query(q, args)).rows as Record<string, any>[])[0];
@@ -27,7 +65,7 @@ async function main() {
     2209,
   );
   assert.equal((await one("select count(*)::int n from rl_documents")).n, 21);
-  await db.exec(sql);
+  await runImport();
   assert.equal((await one("select count(*)::int n from rl_invoices")).n, 20);
   console.log("PASS: importación conciliada e idempotente");
   const admin = (

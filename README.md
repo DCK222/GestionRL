@@ -4,15 +4,15 @@ Aplicación privada de facturación, finanzas y gestión de clases. Next.js, Rea
 
 ## Instalación
 
-1. Abre el proyecto `qbiqnlhzdovdrglihttg` en Supabase y entra en **SQL Editor**.
-2. Ejecuta **una sola vez el archivo `supabase-roboticlab.sql` completo**. Incluye tablas, permisos, funciones, administrador, datos importados, PDFs y el Excel original. Es transaccional y admite repetición sin duplicar los registros de origen. No ejecutes fragmentos por separado.
+1. Abre el proyecto `qbiqnlhzdovdrglihttg` en Supabase y entra en **SQL Editor**. Los archivos para importar desde el navegador están en `deliverables/sql-por-partes` y en `deliverables/sql-por-partes.zip`.
+2. Copia y ejecuta el contenido completo de los **29 archivos SQL numerados**, en orden desde `001_estructura_y_datos.sql` hasta `029_verificar_importacion.sql`. Sustituye todo el contenido del editor en cada paso; no acumules archivos en una misma consulta. Cada parte es una transacción independiente y muestra su confirmación. Si hay un error, detente y repite esa parte después de resolverlo. El último debe mostrar **IMPORTACION COMPLETADA**. Se incluyen tablas, permisos, funciones, administrador, datos importados, PDFs y el Excel original. No uses la aplicación hasta terminar todas las partes.
 3. Descomprime `roboticlab-aplicacion.zip` y sube su contenido a un repositorio **privado** de GitHub. `package.json` y `render.yaml` deben estar en la raíz.
 4. En Render, selecciona **New → Blueprint**, conecta el repositorio y utiliza el `render.yaml` incluido. Render instalará, compilará y arrancará la aplicación. El YAML por sí solo necesita el repositorio con el código.
 5. Entra en la URL que asigne Render. Usuario: **admin**. Contraseña: la indicada por el propietario en esta conversación. El SQL contiene únicamente su hash bcrypt. Puedes cambiarla en Configuración → Acceso y usuarios.
 
 La URL de Supabase y su clave pública ya están configuradas. No se necesita una clave de servicio para las funciones normales. Los datos se importan en Supabase **cuando ejecutes el SQL**, no al desplegar el frontend. La cuenta `admin` utiliza internamente `admin@roboticlab.internal`; no requiere un buzón ni envío de correo.
 
-El SQL contiene los documentos originales y ocupa unos 11 MB. Si el editor del navegador no permite cargarlo completo, utiliza `psql` con la conexión de base de datos que muestra Supabase en **Connect**, pasando `-f supabase-roboticlab.sql`. Sigue siendo el mismo y único SQL. No publiques el SQL ni las copias de datos en un repositorio público.
+El SQL completo original ocupa unos 11 MB y supera el límite del SQL Editor web observado en este proyecto. Las partes tienen menos de 450 KB y reconstruyen los documentos grandes con comprobación SHA256. Como alternativa a las partes, puedes ejecutar el SQL completo con `deliverables/IMPORTAR-SUPABASE.cmd`: pide el Host de **Connect → Session pooler** y la contraseña de la base de datos (distinta de admin), sin guardarla. Requiere `psql`, ya disponible en el equipo de origen. Elige uno de los dos métodos. No publiques los SQL ni las copias de datos en GitHub.
 
 El plan gratuito de Render puede suspender el servicio sin actividad. Para remisión fiscal automática en producción hace falta un servicio que permanezca activo. No se ha creado ni contratado ningún servicio remoto desde esta entrega.
 

@@ -1279,6 +1279,28 @@ td .cell-title {
 .line-editor {
   margin-bottom: 14px;
 }
+.invoice-lines-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 12px 0 18px;
+}
+.invoice-lines-toolbar h3 {
+  margin-bottom: 5px;
+  font-size: 14px;
+}
+.invoice-lines-toolbar span {
+  color: var(--muted);
+  font-size: 12px;
+}
+.add-invoice-line {
+  width: 100%;
+  border-style: dashed;
+  color: var(--blue);
+  margin-bottom: 24px;
+}
 .line-editor th,
 .line-editor td {
   padding: 9px 6px;
@@ -2158,6 +2180,54 @@ td .cell-title {
   }
   .modal-footer {
     padding: 16px 20px;
+  }
+  .invoice-lines-toolbar > button {
+    width: 100%;
+  }
+  .line-editor,
+  .line-editor tbody {
+    display: block;
+  }
+  .line-editor thead {
+    display: none;
+  }
+  .line-editor tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 12px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 14px;
+    margin-bottom: 12px;
+  }
+  .line-editor td {
+    min-width: 0;
+    padding: 0;
+    border: 0;
+  }
+  .line-editor td:first-child {
+    grid-column: 1 / -1;
+  }
+  .line-editor td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 6px;
+    color: var(--muted);
+    font-size: 11px;
+  }
+  .line-editor input,
+  .line-editor select,
+  .line-editor textarea {
+    width: 100%;
+    min-width: 0;
+    font-size: 16px;
+  }
+  .line-editor td.num {
+    text-align: left;
+  }
+  .line-editor td:last-child {
+    align-self: end;
+    justify-self: end;
   }
   .invoice-paper {
     margin: 15px 10px;

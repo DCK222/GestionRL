@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
 import { qrUrl } from "@/lib/qr";
 import {
@@ -450,15 +450,37 @@ function InvoiceEditor({
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
   const lines = form.lines || [];
+  const lineEditor = useRef<HTMLTableElement>(null);
+  const focusNewLine = useRef(false);
+  useEffect(() => {
+    if (!focusNewLine.current) return;
+    focusNewLine.current = false;
+    const inputs = lineEditor.current?.querySelectorAll("textarea");
+    const input = inputs?.[inputs.length - 1];
+    input?.focus();
+    input?.scrollIntoView({ block: "nearest" });
+  }, [lines.length]);
   const totals = calculateInvoice(lines, form.withholding_rate || 0);
   function field<K extends keyof Invoice>(key: K, v: Invoice[K]) {
     setForm((f) => ({ ...f, [key]: v }));
   }
   function line(index: number, key: keyof Line, value: string | number) {
-    field(
-      "lines",
-      lines.map((l, i) => (i === index ? { ...l, [key]: value } : l)),
-    );
+    setForm((f) => ({
+      ...f,
+      lines: (f.lines || []).map((l, i) =>
+        i === index ? { ...l, [key]: value } : l,
+      ),
+    }));
+  }
+  function addLine() {
+    focusNewLine.current = true;
+    setForm((f) => ({
+      ...f,
+      lines: [
+        ...(f.lines || []),
+        { description: "", quantity: 1, price: 0, discount: 0, vat_rate: 0 },
+      ],
+    }));
   }
   return (
     <Modal
@@ -547,9 +569,25 @@ function InvoiceEditor({
               Indica el motivo en las observaciones.
             </div>
           )}
-          <h3 className="form-section-title">Conceptos de la factura</h3>
+          <div className="invoice-lines-toolbar">
+            <div>
+              <h3>Conceptos de la factura</h3>
+              <span aria-live="polite">
+                {lines.length} {lines.length === 1 ? "línea" : "líneas"} · Añade
+                un concepto por servicio o producto.
+              </span>
+            </div>
+            <button
+              type="button"
+              className="primary"
+              disabled={busy}
+              onClick={addLine}
+            >
+              <Plus size={17} /> Añadir línea
+            </button>
+          </div>
           <div className="table-wrap">
-            <table className="line-editor">
+            <table className="line-editor" ref={lineEditor}>
               <thead>
                 <tr>
                   <th>Descripción</th>
@@ -564,7 +602,7 @@ function InvoiceEditor({
               <tbody>
                 {lines.map((l, i) => (
                   <tr key={i}>
-                    <td>
+                    <td data-label={`Descripción ${i + 1}`}>
                       <textarea
                         aria-label={`Descripción ${i + 1}`}
                         required
@@ -572,7 +610,7 @@ function InvoiceEditor({
                         onChange={(e) => line(i, "description", e.target.value)}
                       />
                     </td>
-                    <td>
+                    <td data-label="Cantidad">
                       <input
                         aria-label={`Cantidad ${i + 1}`}
                         required
@@ -585,7 +623,7 @@ function InvoiceEditor({
                         }
                       />
                     </td>
-                    <td>
+                    <td data-label="Precio €">
                       <input
                         aria-label={`Precio ${i + 1}`}
                         required
@@ -598,7 +636,7 @@ function InvoiceEditor({
                         }
                       />
                     </td>
-                    <td>
+                    <td data-label="Dto. %">
                       <input
                         aria-label={`Descuento ${i + 1}`}
                         required
@@ -611,7 +649,7 @@ function InvoiceEditor({
                         }
                       />
                     </td>
-                    <td>
+                    <td data-label="IVA %">
                       <select
                         aria-label={`IVA ${i + 1}`}
                         value={l.vat_rate}
@@ -624,15 +662,15 @@ function InvoiceEditor({
                         ))}
                       </select>
                     </td>
-                    <td className="num">
+                    <td className="num" data-label="Base">
                       {money(calculateInvoice([l], 0).subtotal)}
                     </td>
                     <td>
                       <button
                         type="button"
                         className="icon-button"
-                        aria-label="Eliminar concepto"
-                        disabled={lines.length === 1}
+                        aria-label={`Eliminar línea ${i + 1}`}
+                        disabled={busy || lines.length === 1}
                         onClick={() =>
                           field(
                             "lines",
@@ -650,21 +688,11 @@ function InvoiceEditor({
           </div>
           <button
             type="button"
-            className="text-button"
-            onClick={() =>
-              field("lines", [
-                ...lines,
-                {
-                  description: "",
-                  quantity: 1,
-                  price: 0,
-                  discount: 0,
-                  vat_rate: 0,
-                },
-              ])
-            }
+            className="add-invoice-line"
+            disabled={busy}
+            onClick={addLine}
           >
-            <Plus size={16} /> Añadir concepto
+            <Plus size={16} /> Añadir otra línea
           </button>
           <div className="form-grid">
             <div>
