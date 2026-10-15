@@ -30,6 +30,7 @@ import {
 } from "@/lib/finance";
 import { SectionTitle, Badge, Empty, Modal, Field } from "./ui";
 import { PaymentForm } from "./records";
+import { invoiceMatchesClient, searchText } from "@/lib/clients";
 export async function downloadDocument(id: string) {
   const { data, error } = await supabase
     .from("rl_documents")
@@ -42,9 +43,13 @@ export async function downloadDocument(id: string) {
   );
   download(data.name, bytes, data.mime);
 }
-export function Invoices(shared: Shared) {
+export function Invoices(shared: Shared & { initialClientId?: string }) {
   const { data, canWrite, notify, reload } = shared;
   const [search, setSearch] = useState(""),
+    [clientId, setClientId] = useState(shared.initialClientId || "all"),
+    [dateFrom, setDateFrom] = useState(""),
+    [dateTo, setDateTo] = useState(""),
+    [sort, setSort] = useState("newest"),
     [status, setStatus] = useState("all"),
     [year, setYear] = useState("all"),
     [editing, setEditing] = useState<Partial<Invoice> | null>(null),
@@ -53,16 +58,27 @@ export function Invoices(shared: Shared) {
     [busy, setBusy] = useState(false),
     [issue, setIssue] = useState<Invoice | null>(null);
   const selected = data.invoices.find((i) => i.id === view);
+  const filterClient = data.clients.find((c) => c.id === clientId);
   const rows = data.invoices
     .filter(
       (i) =>
-        `${i.number} ${i.client_snapshot.name} ${i.client_snapshot.tax_id}`
-          .toLowerCase()
-          .includes(search.toLowerCase()) &&
+        searchText(
+          `${i.number || "Borrador"} ${i.client_snapshot.name} ${i.client_snapshot.tax_id} ${i.notes} ${i.lines.map((l) => l.description).join(" ")}`,
+        ).includes(searchText(search)) &&
+        (clientId === "all" ||
+          (filterClient && invoiceMatchesClient(i, filterClient))) &&
+        (!dateFrom || i.date >= dateFrom) &&
+        (!dateTo || i.date <= dateTo) &&
         (year === "all" || i.date.startsWith(year)) &&
         (status === "all" || invoiceState(i, data.payments) === status),
     )
-    .sort((a, b) => b.date.localeCompare(a.date));
+    .sort((a, b) =>
+      sort === "oldest"
+        ? a.date.localeCompare(b.date)
+        : sort === "amount"
+          ? b.total - a.total
+          : b.date.localeCompare(a.date),
+    );
   function draft() {
     setEditing({
       date: today(),
@@ -73,7 +89,7 @@ export function Invoices(shared: Shared) {
       ],
       withholding_rate: 0,
       invoice_type: "F1",
-      client_id: data.clients[0]?.id || "",
+      client_id: filterClient?.id || data.clients[0]?.id || "",
       environment: data.settings?.verifactu_enabled
         ? data.settings.verifactu_environment
         : "production",
@@ -211,12 +227,27 @@ export function Invoices(shared: Shared) {
           <div className="input-search">
             <Search size={17} />
             <input
-              placeholder="Buscar factura, cliente o NIF…"
+              aria-label="Buscar facturas"
+              placeholder="Número, cliente, NIF o concepto…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
           <div className="filters">
+            <select
+              aria-label="Cliente de factura"
+              value={clientId}
+              onChange={(e) => setClientId(e.target.value)}
+            >
+              <option value="all">Todos los clientes</option>
+              {[...data.clients]
+                .sort((a, b) => a.name.localeCompare(b.name, "es"))
+                .map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+            </select>
             <select
               aria-label="Estado de factura"
               value={status}
@@ -251,6 +282,54 @@ export function Invoices(shared: Shared) {
                 ))}
             </select>
           </div>
+        </div>
+        <div className="invoice-filter-bar">
+          <label>
+            Desde{" "}
+            <input
+              type="date"
+              aria-label="Facturas desde"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+            />
+          </label>
+          <label>
+            Hasta{" "}
+            <input
+              type="date"
+              aria-label="Facturas hasta"
+              value={dateTo}
+              min={dateFrom || undefined}
+              onChange={(e) => setDateTo(e.target.value)}
+            />
+          </label>
+          <select
+            aria-label="Ordenar facturas"
+            value={sort}
+            onChange={(e) => setSort(e.target.value)}
+          >
+            <option value="newest">Más recientes</option>
+            <option value="oldest">Más antiguas</option>
+            <option value="amount">Mayor importe</option>
+          </select>
+          <button
+            type="button"
+            onClick={() => {
+              setSearch("");
+              setClientId("all");
+              setStatus("all");
+              setYear("all");
+              setDateFrom("");
+              setDateTo("");
+              setSort("newest");
+            }}
+          >
+            Limpiar filtros
+          </button>
+          <strong>
+            {rows.length} resultados ·{" "}
+            {money(rows.reduce((sum, i) => sum + i.total, 0))}
+          </strong>
         </div>
         <div className="table-wrap">
           <table>

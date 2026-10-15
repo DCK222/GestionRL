@@ -8,8 +8,6 @@ import {
   Wallet,
   GraduationCap,
   Copy,
-  History,
-  Pencil,
 } from "lucide-react";
 import type { Shared } from "./workspace";
 import type { Enrollment } from "@/lib/types";
@@ -24,10 +22,12 @@ import {
 } from "@/lib/finance";
 import { SectionTitle, Stat, Badge, Empty, Field, Modal } from "./ui";
 import { PaymentForm } from "./records";
+import { AcademySheet } from "./academy-sheet";
+import { searchText } from "@/lib/clients";
 export function Academy(
   shared: Shared & { period: string; setPeriod: (s: string) => void },
 ) {
-  const { data, period, setPeriod, canWrite, notify, reload } = shared;
+  const { data, period, setPeriod, canWrite, notify } = shared;
   const [search, setSearch] = useState(""),
     [category, setCategory] = useState("all"),
     [edit, setEdit] = useState<Partial<Enrollment> | null>(null),
@@ -35,15 +35,27 @@ export function Academy(
     [payment, setPayment] = useState<Enrollment | null>(null),
     [clone, setClone] = useState(false),
     [history, setHistory] = useState<Record<string, unknown>[] | null>(null);
-  const monthRows = data.enrollments.filter((e) => e.period === period);
+  const [dirty, setDirty] = useState(false);
+  const periods = [
+    ...new Set([...data.enrollments.map((e) => e.period), period]),
+  ]
+    .sort()
+    .reverse();
+  const monthRows = data.enrollments
+    .filter((e) => e.period === period)
+    .sort(
+      (a, b) =>
+        a.category.localeCompare(b.category, "es") ||
+        (a.source_row ?? 9999) - (b.source_row ?? 9999),
+    );
   const categories = [...new Set(monthRows.map((e) => e.category))];
   const student = (id: string | null) => data.students.find((s) => s.id === id);
   const rows = monthRows.filter(
     (e) =>
       (category === "all" || e.category === category) &&
-      `${student(e.student_id)?.name} ${e.schedule} ${e.notes}`
-        .toLowerCase()
-        .includes(search.toLowerCase()),
+      searchText(
+        `${student(e.student_id)?.name} ${student(e.student_id)?.phone} ${e.schedule} ${e.notes}`,
+      ).includes(searchText(search)),
   );
   const sum = (k: "paid" | "expected" | "month_hours" | "advance") =>
     monthRows.reduce((a, e) => a + Number(e[k] || 0), 0);
@@ -67,6 +79,7 @@ export function Academy(
             <input
               aria-label="Mes de clases"
               type="month"
+              disabled={dirty}
               value={period}
               onChange={(e) => {
                 setPeriod(e.target.value);
@@ -76,6 +89,7 @@ export function Academy(
             {canWrite && (
               <button
                 className="primary"
+                disabled={dirty}
                 onClick={() =>
                   setEdit({
                     period,
@@ -86,7 +100,7 @@ export function Academy(
                   })
                 }
               >
-                <Plus size={17} /> Añadir inscripción
+                <Plus size={17} /> Añadir fila
               </button>
             )}
           </>
@@ -137,6 +151,22 @@ export function Academy(
         ))}
       </div>
       <section className="panel">
+        <div className="sheet-month-tabs" aria-label="Meses del registro">
+          {periods.map((m) => (
+            <button
+              key={m}
+              disabled={dirty && m !== period}
+              aria-pressed={period === m}
+              className={period === m ? "active" : ""}
+              onClick={() => {
+                setPeriod(m);
+                setCategory("all");
+              }}
+            >
+              {monthLabel(m)}
+            </button>
+          ))}
+        </div>
         <div className="table-toolbar">
           <div className="input-search">
             <Search size={17} />
@@ -148,6 +178,7 @@ export function Academy(
           </div>
           <div className="actions">
             <button
+              disabled={dirty}
               onClick={() =>
                 download(
                   `clases-${period}.csv`,
@@ -173,111 +204,30 @@ export function Academy(
               <Download size={16} /> Exportar
             </button>
             {canWrite && (
-              <button onClick={() => setClone(true)}>
+              <button disabled={dirty} onClick={() => setClone(true)}>
                 <Copy size={16} /> Preparar otro mes
               </button>
             )}
           </div>
         </div>
-        <div className="table-wrap academy-table">
-          <table>
-            <thead>
-              <tr>
-                <th>Alumno / contacto</th>
-                <th>Tarifa</th>
-                <th className="num">Unidades</th>
-                <th className="num">Bono</th>
-                <th className="num">Horas mes</th>
-                <th className="num">Pagado</th>
-                <th className="num">Anticipo</th>
-                <th className="num">Previsto</th>
-                <th>Días / observaciones</th>
-                <th>Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((e) => (
-                <tr key={e.id}>
-                  <td>
-                    <strong className="cell-title">
-                      {student(e.student_id)?.name ||
-                        e.schedule ||
-                        "Otros ingresos"}
-                    </strong>
-                    <small>{e.category}</small>
-                    <small>{e.schedule}</small>
-                  </td>
-                  <td>
-                    {e.rate_label || money(e.rate)}
-                    <small>
-                      {e.billing_mode === "hourly"
-                        ? "Por hora"
-                        : e.billing_mode === "pack"
-                          ? "Bono"
-                          : "Cálculo manual"}
-                    </small>
-                  </td>
-                  <td className="num">{qty(e.units)}</td>
-                  <td className="num">{qty(e.pack_units)}</td>
-                  <td className="num">{qty(e.month_hours)}</td>
-                  <td className="num positive">{money(e.paid)}</td>
-                  <td className="num">{money(e.advance)}</td>
-                  <td className="num">
-                    <Badge tone={(e.expected || 0) > 0 ? "amber" : "neutral"}>
-                      {money(e.expected)}
-                    </Badge>
-                  </td>
-                  <td className="notes-cell">
-                    <span>{e.class_days || "—"}</span>
-                    {e.notes && <small>{e.notes}</small>}
-                  </td>
-                  <td>
-                    <div className="row-actions">
-                      {canWrite && (
-                        <>
-                          <button
-                            title="Registrar clase o bono"
-                            aria-label={`Horas de ${student(e.student_id)?.name}`}
-                            onClick={() => setHours(e)}
-                          >
-                            <Clock3 size={16} />
-                          </button>
-                          <button
-                            title="Registrar cobro"
-                            onClick={() => setPayment(e)}
-                          >
-                            <Wallet size={16} />
-                          </button>
-                          <button
-                            title="Editar fila"
-                            onClick={() => setEdit(e)}
-                          >
-                            <Pencil size={16} />
-                          </button>
-                        </>
-                      )}
-                      <button
-                        title="Historial de horas"
-                        onClick={() => void showHistory(e)}
-                      >
-                        <History size={16} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {!rows.length && (
-            <Empty
-              title="Un mes por organizar"
-              text="Añade inscripciones o prepara el mes copiando las actividades de otro periodo."
-            />
-          )}
-        </div>
+        <AcademySheet
+          {...shared}
+          rows={rows}
+          onHours={setHours}
+          onPayment={setPayment}
+          onEdit={setEdit}
+          onHistory={(row) => void showHistory(row)}
+          onDirty={setDirty}
+        />
+        {!rows.length && (
+          <Empty
+            title="Un mes por organizar"
+            text="Añade filas o prepara el mes copiando las actividades de otro periodo."
+          />
+        )}
         <div className="table-footer">
           {rows.length} registros{" "}
-          <span>«—» significa dato no indicado en el origen.</span>
+          <span>Una celda vacía significa dato no indicado.</span>
         </div>
       </section>
       <div className="subtle-note">

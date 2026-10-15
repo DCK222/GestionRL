@@ -8,7 +8,8 @@
     "start": "next start -H 0.0.0.0",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
-    "test:db": "tsx scripts/test-database.ts"
+    "test:db": "tsx scripts/test-database.ts",
+    "test:workspace": "tsx scripts/test-workspace-db.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.57.0",

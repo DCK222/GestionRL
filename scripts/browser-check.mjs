@@ -11,6 +11,7 @@ grant usage on schema auth,public to authenticated;grant execute on all function
 await db.exec(
   await fs.readFile("deliverables/supabase-roboticlab.sql", "utf8"),
 );
+await db.exec(await fs.readFile("migrations/030_clientes_y_hoja.sql", "utf8"));
 const admin = (
   await db.query(
     "select id from auth.users where email='admin@roboticlab.internal'",
@@ -207,6 +208,34 @@ try {
   console.log("PASS login and dashboard");
   await page.getByRole("button", { name: "Facturación", exact: true }).click();
   await page.getByRole("heading", { name: "Tus facturas, en orden" }).waitFor();
+  const monteClient = (
+    await db.query("select id from rl_clients where name='Monte Platino S.L.'")
+  ).rows[0].id;
+  await page
+    .getByLabel("Cliente de factura", { exact: true })
+    .selectOption(monteClient);
+  const monteCount = Number(
+    (
+      await db.query("select count(*) n from rl_invoices where client_id=$1", [
+        monteClient,
+      ])
+    ).rows[0].n,
+  );
+  assert.equal(
+    await page.locator("section.panel tbody tr").count(),
+    monteCount,
+  );
+  await page.getByLabel("Buscar facturas", { exact: true }).fill("informatica");
+  assert.ok((await page.locator("section.panel tbody tr").count()) > 0);
+  await page.getByLabel("Facturas desde", { exact: true }).fill("2026-02-01");
+  await page.getByLabel("Facturas hasta", { exact: true }).fill("2026-02-28");
+  assert.equal(await page.locator("section.panel tbody tr").count(), 2);
+  await page.screenshot({ path: out + "/invoice-filters.png", fullPage: true });
+  await page
+    .getByRole("button", { name: "Limpiar filtros", exact: true })
+    .click();
+  assert.equal(await page.locator("section.panel tbody tr").count(), 20);
+  console.log("PASS invoice customer, concept and date filters");
   await page
     .getByRole("button", { name: "Nueva factura", exact: true })
     .click();
@@ -352,6 +381,74 @@ try {
     fullPage: true,
     animations: "disabled",
   });
+  const sheet = page.locator(".editable-sheet");
+  const cell = (r, c) => sheet.locator(`[data-row="${r}"][data-col="${c}"]`);
+  await cell(0, 1).fill("Grupo editado en hoja");
+  await cell(0, 1).press("Enter");
+  assert.equal(
+    await cell(1, 1).evaluate((el) => el === document.activeElement),
+    true,
+  );
+  await cell(0, 11).evaluate((el) => {
+    const clipboardData = new DataTransfer();
+    clipboardData.setData(
+      "text/plain",
+      "Lunes\tNota hoja 1\nMartes\tNota hoja 2\n",
+    );
+    el.dispatchEvent(
+      new ClipboardEvent("paste", {
+        clipboardData,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+  });
+  assert.equal(await cell(1, 12).inputValue(), "Nota hoja 2");
+  await cell(0, 3).fill("12,50");
+  await cell(0, 4).selectOption("hourly");
+  await cell(0, 7).fill("3");
+  await cell(0, 8).fill("10");
+  await cell(0, 9).fill("5");
+  await sheet
+    .getByRole("button", { name: /^Recalcular previsto de/ })
+    .first()
+    .click();
+  assert.equal(await cell(0, 10).inputValue(), "22.5");
+  assert.equal(
+    await page.getByLabel("Mes de clases", { exact: true }).isDisabled(),
+    true,
+  );
+  await page.screenshot({ path: out + "/editable-sheet.png", fullPage: true });
+  await page
+    .getByRole("button", { name: "Guardar cambios", exact: true })
+    .click();
+  await page.getByText("2 filas guardadas", { exact: true }).waitFor();
+  assert.equal(
+    Number(
+      (
+        await db.query(
+          "select expected from rl_enrollments where notes='Nota hoja 1'",
+        )
+      ).rows[0].expected,
+    ),
+    22.5,
+  );
+  assert.equal(
+    Number(
+      (
+        await db.query(
+          "select count(*) n from rl_enrollments where notes in ('Nota hoja 1','Nota hoja 2')",
+        )
+      ).rows[0].n,
+    ),
+    2,
+  );
+  await page.getByPlaceholder("Buscar alumno o anotación…").fill("Nota hoja 1");
+  assert.equal(await sheet.locator("tbody tr").count(), 1);
+  await page.getByPlaceholder("Buscar alumno o anotación…").fill("");
+  console.log(
+    "PASS editable monthly sheet: keyboard, multi-cell paste, decimal comma, totals and save",
+  );
   await page
     .getByRole("button", { name: "Horas de LUCIA", exact: true })
     .click();
@@ -379,6 +476,22 @@ try {
     .click();
   await page.getByText("Contacto guardado", { exact: true }).waitFor();
   console.log("PASS client form");
+  const clientRow = page
+    .locator("section.panel tbody tr")
+    .filter({ hasText: "Monte Platino S.L." });
+  await clientRow.getByRole("button", { name: /facturas →/ }).click();
+  await page.getByLabel("Cliente de factura", { exact: true }).waitFor();
+  assert.equal(
+    await page.getByLabel("Cliente de factura", { exact: true }).inputValue(),
+    monteClient,
+  );
+  assert.equal(
+    await page.locator("section.panel tbody tr").count(),
+    monteCount,
+  );
+  console.log(
+    "PASS invoice clients in directory and direct filtered invoice navigation",
+  );
   await page
     .getByRole("button", { name: "Gestión financiera", exact: true })
     .click();

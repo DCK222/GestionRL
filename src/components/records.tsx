@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Plus,
   Search,
@@ -27,17 +27,53 @@ import {
   invoicePaid,
 } from "@/lib/finance";
 import { SectionTitle, Badge, Empty, Modal, Field } from "./ui";
-export function Contacts({ data, canWrite, reload, notify }: Shared) {
+import { invoiceMatchesClient, searchText } from "@/lib/clients";
+export function Contacts({
+  data,
+  canWrite,
+  reload,
+  notify,
+  onInvoices,
+}: Shared & { onInvoices: (id: string) => void }) {
   const [tab, setTab] = useState<"clients" | "students">("clients"),
     [search, setSearch] = useState(""),
     [edit, setEdit] = useState<Partial<Client & Student> | null>(null),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
-  const rows = (tab === "clients" ? data.clients : data.students).filter((c) =>
-    `${c.name} ${c.email} ${c.phone} ${"tax_id" in c ? c.tax_id : ""}`
-      .toLowerCase()
-      .includes(search.toLowerCase()),
-  );
+  const [syncing, setSyncing] = useState(false),
+    [syncError, setSyncError] = useState("");
+  async function syncClients(manual = true) {
+    setSyncing(true);
+    setSyncError("");
+    try {
+      const changed = await rpc<number>("rl_sync_invoice_clients", {});
+      if (changed) await reload();
+      if (manual)
+        notify(
+          changed
+            ? `${changed} fichas recuperadas o completadas desde las facturas`
+            : "Todos los clientes de las facturas ya están en el directorio",
+        );
+    } catch (e) {
+      setSyncError(
+        /rl_sync_invoice_clients|schema cache/.test((e as Error).message)
+          ? "Ejecuta la actualización 030_clientes_y_hoja.sql en Supabase para activar la recuperación de clientes."
+          : (e as Error).message,
+      );
+    } finally {
+      setSyncing(false);
+    }
+  }
+  useEffect(() => {
+    if (canWrite) void syncClients(false);
+  }, [canWrite]);
+  const rows = (tab === "clients" ? data.clients : data.students)
+    .filter((c) =>
+      searchText(
+        `${c.name} ${c.email} ${c.phone} ${"tax_id" in c ? c.tax_id : ""}`,
+      ).includes(searchText(search)),
+    )
+    .sort((a, b) => a.name.localeCompare(b.name, "es"));
   return (
     <>
       <SectionTitle
@@ -82,6 +118,24 @@ export function Contacts({ data, canWrite, reload, notify }: Shared) {
         </button>
       </div>
       <section className="panel">
+        {tab === "clients" && (
+          <div className="client-import-bar">
+            <span>
+              Los datos fiscales de tus facturas se recuperan aquí. Abre sus
+              facturas desde cada ficha.
+            </span>
+            {canWrite && (
+              <button disabled={syncing} onClick={() => void syncClients()}>
+                {syncing ? "Recuperando…" : "Recuperar clientes de facturas"}
+              </button>
+            )}
+          </div>
+        )}
+        {syncError && (
+          <div className="alert error" role="alert">
+            {syncError}
+          </div>
+        )}
         <div className="table-toolbar">
           <div className="input-search">
             <Search size={17} />
@@ -98,6 +152,8 @@ export function Contacts({ data, canWrite, reload, notify }: Shared) {
                 csvText(
                   rows.map((c) => ({
                     Nombre: c.name,
+                    NIF: "tax_id" in c ? c.tax_id : "",
+                    Direccion: "address" in c ? c.address : "",
                     Email: c.email,
                     Telefono: c.phone,
                     Notas: c.notes,
@@ -117,6 +173,7 @@ export function Contacts({ data, canWrite, reload, notify }: Shared) {
                 <th>{tab === "clients" ? "NIF / CIF" : "Estado"}</th>
                 <th>Contacto</th>
                 <th>{tab === "clients" ? "Dirección" : "Observaciones"}</th>
+                {tab === "clients" && <th>Facturación</th>}
                 <th />
               </tr>
             </thead>
@@ -147,6 +204,34 @@ export function Contacts({ data, canWrite, reload, notify }: Shared) {
                   <td className="notes-cell">
                     {"address" in c ? c.address : c.notes}
                   </td>
+                  {"tax_id" in c && (
+                    <td>
+                      <button
+                        className="table-link"
+                        onClick={() => onInvoices(c.id)}
+                      >
+                        {
+                          data.invoices.filter((i) =>
+                            invoiceMatchesClient(i, c),
+                          ).length
+                        }{" "}
+                        facturas →
+                      </button>
+                      <small>
+                        {money(
+                          data.invoices
+                            .filter(
+                              (i) =>
+                                invoiceMatchesClient(i, c) &&
+                                i.status !== "draft" &&
+                                i.environment === "production",
+                            )
+                            .reduce((sum, i) => sum + i.total, 0),
+                        )}{" "}
+                        emitidos
+                      </small>
+                    </td>
+                  )}
                   <td>
                     {canWrite && (
                       <button

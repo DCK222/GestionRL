@@ -6,7 +6,7 @@ Aplicación privada de facturación, finanzas y gestión de clases. Next.js, Rea
 
 1. Abre el proyecto `qbiqnlhzdovdrglihttg` en Supabase y entra en **SQL Editor**. Los archivos para importar desde el navegador están en `deliverables/sql-por-partes` y en `deliverables/sql-por-partes.zip`.
 2. Copia y ejecuta el contenido completo de los **29 archivos SQL numerados**, en orden desde `001_estructura_y_datos.sql` hasta `029_verificar_importacion.sql`. Sustituye todo el contenido del editor en cada paso; no acumules archivos en una misma consulta. Cada parte es una transacción independiente y muestra su confirmación. Si hay un error, detente y repite esa parte después de resolverlo. El último debe mostrar **IMPORTACION COMPLETADA**. Se incluyen tablas, permisos, funciones, administrador, datos importados, PDFs y el Excel original. No uses la aplicación hasta terminar todas las partes.
-3. Descomprime `roboticlab-aplicacion.zip` y sube su contenido a un repositorio **privado** de GitHub. `package.json` y `render.yaml` deben estar en la raíz.
+3. Ejecuta también **`migrations/030_clientes_y_hoja.sql`** (hay una copia en `deliverables`). Añade recuperación de clientes de las facturas y guardado de varias filas de la hoja. Si ya importaste los 29 archivos, ejecuta solamente esta actualización pequeña. Después descomprime `roboticlab-aplicacion.zip` y sube su contenido a un repositorio **privado** de GitHub. `package.json` y `render.yaml` deben estar en la raíz.
 4. En Render, selecciona **New → Blueprint**, conecta el repositorio y utiliza el `render.yaml` incluido. Render instalará, compilará y arrancará la aplicación. El YAML por sí solo necesita el repositorio con el código.
 5. Entra en la URL que asigne Render. Usuario: **admin**. Contraseña: la indicada por el propietario en esta conversación. El SQL contiene únicamente su hash bcrypt. Puedes cambiarla en Configuración → Acceso y usuarios.
 
@@ -17,6 +17,11 @@ El SQL completo original ocupa unos 11 MB y supera el límite del SQL Editor web
 El plan gratuito de Render puede suspender el servicio sin actividad. Para remisión fiscal automática en producción hace falta un servicio que permanezca activo. No se ha creado ni contratado ningún servicio remoto desde esta entrega.
 
 ## Funciones incluidas
+
+- Directorio de clientes recuperados automáticamente al abrir Clientes y alumnos: completa los campos vacíos con la factura más reciente disponible y evita duplicados por NIF o referencia. No sustituye los datos que ya has editado. Cada ficha enlaza con sus facturas.
+- Facturación con filtro por cliente, fechas, año y estado; búsqueda de números, NIF y conceptos sin depender de tildes; ordenación por fecha o importe y exportación de los resultados filtrados.
+- Hoja mensual editable en Clases e ingresos: pestañas de meses y actividades, edición directa, Tab/Enter, pegado de bloques tabulados desde Excel, coma decimal, fila de totales y guardado conjunto de cambios. El guardado comprueba versiones y revierte todo el lote si una fila cambió en otra sesión. Las columnas de alumnos y cabeceras permanecen visibles al desplazar la hoja.
+- Botón de recálculo por fila: previsto = horas × precio − pagado − anticipo para tarifas por hora. El recálculo es explícito para respetar el histórico manual. Editar pagado corrige el registro; para nuevos movimientos con fecha usa Registrar cobro o Registrar clase.
 
 - Inicio con accesos rápidos, indicadores y actividad reciente.
 - Panel financiero mensual y anual, ingresos registrados, previsiones, gastos y resumen de facturación, con exportación CSV.

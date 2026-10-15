@@ -96,6 +96,7 @@ export type Shared = {
   notify: (message: string, error?: boolean) => void;
   canWrite: boolean;
   admin: boolean;
+  setUnsavedChanges?: (value: boolean) => void;
 };
 export function Workspace() {
   const [session, setSession] = useState<Session | null>(null),
@@ -104,6 +105,8 @@ export function Workspace() {
     [failure, setFailure] = useState(""),
     [data, setData] = useState<Data>(initial),
     [page, setPage] = useState<PageKey>("home"),
+    [invoiceClient, setInvoiceClient] = useState("all"),
+    [unsavedChanges, setUnsavedChanges] = useState(false),
     [theme, setTheme] = useState("light"),
     [mobile, setMobile] = useState(false),
     [search, setSearch] = useState(""),
@@ -205,8 +208,18 @@ export function Workspace() {
     notify,
     canWrite: role === "admin" || role === "staff",
     admin: role === "admin",
+    setUnsavedChanges,
   };
   function go(p: PageKey) {
+    if (
+      p !== page &&
+      unsavedChanges &&
+      !window.confirm(
+        "Hay cambios sin guardar en la hoja. ¿Quieres salir y descartarlos?",
+      )
+    )
+      return;
+    if (p === "invoices") setInvoiceClient("all");
     setPage(p);
     setMobile(false);
     setSearch("");
@@ -428,11 +441,21 @@ export function Workspace() {
               {page === "finance" && (
                 <Finance {...shared} period={period} setPeriod={setPeriod} />
               )}
-              {page === "invoices" && <Invoices {...shared} />}
+              {page === "invoices" && (
+                <Invoices {...shared} initialClientId={invoiceClient} />
+              )}
               {page === "academy" && (
                 <Academy {...shared} period={period} setPeriod={setPeriod} />
               )}
-              {page === "clients" && <Contacts {...shared} />}
+              {page === "clients" && (
+                <Contacts
+                  {...shared}
+                  onInvoices={(id) => {
+                    setInvoiceClient(id);
+                    setPage("invoices");
+                  }}
+                />
+              )}
               {page === "expenses" && <Expenses {...shared} period={period} />}
               {page === "cash" && <Cashbook {...shared} />}
               {page === "archive" && <Archive {...shared} />}

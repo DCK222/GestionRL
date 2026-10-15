@@ -968,6 +968,181 @@ main {
 .table-wrap {
   overflow-x: auto;
 }
+.invoice-filter-bar,
+.client-import-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-2);
+}
+.invoice-filter-bar label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.invoice-filter-bar strong {
+  margin-left: auto;
+  font-size: 12px;
+}
+.client-import-bar {
+  justify-content: space-between;
+  font-size: 12px;
+}
+.client-import-bar span {
+  max-width: 580px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+.sheet-month-tabs {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--line);
+}
+.sheet-month-tabs button {
+  flex-shrink: 0;
+  font-size: 12px;
+}
+.sheet-month-tabs button.active {
+  background: var(--blue-light);
+  border-color: var(--blue);
+  color: var(--blue);
+}
+.sheet-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
+  padding: 16px 20px;
+  border-top: 1px solid var(--line);
+}
+.sheet-toolbar p {
+  font-size: 12px;
+  margin: 5px 0 0;
+}
+.sheet-toolbar .actions {
+  flex-wrap: wrap;
+}
+.sheet-toolbar [role="status"] {
+  font-size: 12px;
+  color: var(--muted);
+}
+.sheet-scroll {
+  overflow: auto;
+  max-height: 65vh;
+  border-block: 1px solid var(--line);
+}
+.editable-sheet {
+  border-collapse: separate;
+  border-spacing: 0;
+  width: max-content;
+  min-width: 100%;
+}
+.editable-sheet th,
+.editable-sheet td {
+  padding: 0;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.editable-sheet th {
+  padding: 12px;
+}
+.editable-sheet thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--surface-2);
+}
+.editable-sheet .sheet-person {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  width: 205px;
+  min-width: 205px;
+  max-width: 205px;
+  padding: 10px 12px;
+  background: var(--surface);
+  white-space: normal;
+  box-shadow: 3px 0 5px #19376509;
+}
+.editable-sheet thead .sheet-person,
+.editable-sheet tfoot .sheet-person {
+  z-index: 3;
+  background: var(--surface-2);
+}
+.editable-sheet input,
+.editable-sheet select {
+  width: 125px;
+  min-width: 125px;
+  min-height: 46px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 10px;
+  font-size: 12px;
+}
+.editable-sheet td:nth-child(2) input,
+.editable-sheet td:nth-child(3) input {
+  width: 170px;
+}
+.editable-sheet .sheet-wide input {
+  width: 240px;
+}
+.editable-sheet input:focus,
+.editable-sheet select:focus {
+  outline: 2px solid var(--blue);
+  outline-offset: -2px;
+  box-shadow: none;
+}
+.editable-sheet input:disabled,
+.editable-sheet select:disabled {
+  color: var(--text);
+  opacity: 1;
+}
+.editable-sheet .cell-edited {
+  background: var(--blue-light);
+}
+.editable-sheet [aria-invalid="true"] {
+  box-shadow: inset 0 0 0 2px #b64545;
+}
+.editable-sheet .row-actions {
+  padding: 6px;
+}
+.editable-sheet tfoot th,
+.editable-sheet tfoot td {
+  position: sticky;
+  bottom: 0;
+  background: var(--surface-2);
+  padding: 12px 10px;
+  font-weight: 700;
+  z-index: 2;
+}
+.sheet-help {
+  padding: 12px 20px;
+  margin: 0;
+  font-size: 12px;
+}
+@media (max-width: 760px) {
+  .editable-sheet .sheet-person {
+    min-width: 140px;
+    width: 140px;
+    max-width: 140px;
+  }
+  .editable-sheet input,
+  .editable-sheet select {
+    font-size: 16px;
+  }
+  .invoice-filter-bar strong {
+    margin-left: 0;
+  }
+}
 table {
   border-collapse: collapse;
   width: 100%;
@@ -2290,15 +2465,24 @@ td .cell-title {
   }
 }
 @media print {
+  @page {
+    size: A4;
+    /* No browser header/footer area; the invoice supplies its own safe margins. */
+    margin: 0;
+  }
+  html,
   body {
+    margin: 0 !important;
+    padding: 0 !important;
     background: white !important;
+    color-scheme: light;
   }
   body * {
     visibility: hidden !important;
   }
   dialog.modal:has(.invoice-paper) {
-    position: absolute;
-    inset: 0;
+    display: block !important;
+    position: static !important;
     max-height: none;
     width: 100%;
     max-width: none;
@@ -2317,17 +2501,73 @@ td .cell-title {
     visibility: visible !important;
   }
   .invoice-paper {
-    position: absolute;
-    left: 0;
-    top: 0;
+    position: static !important;
     margin: 0 !important;
     border: 0;
     max-width: none;
     width: 100%;
     min-width: 0;
     min-height: 0;
-    padding: 10mm !important;
+    padding: 14mm 16mm !important;
+    /* Repeat the safe inset when a long invoice spans multiple pages. */
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
     color: #000 !important;
+    background: white !important;
+    font-size: 12px;
+  }
+  .invoice-head {
+    margin-bottom: 20px;
+    break-inside: avoid;
+  }
+  .invoice-head > div {
+    gap: 3px;
+    line-height: 1.4;
+  }
+  .invoice-head img {
+    width: 185px;
+    height: 55px;
+    margin-bottom: 10px;
+  }
+  .invoice-client {
+    padding: 14px;
+  }
+  .invoice-heading {
+    padding: 14px 0;
+    margin-bottom: 18px;
+    break-inside: avoid;
+    break-after: avoid;
+  }
+  .invoice-heading h2 {
+    margin-bottom: 6px;
+  }
+  .invoice-paper .invoice-lines th,
+  .invoice-paper .invoice-lines td {
+    padding: 10px 8px;
+  }
+  .invoice-paper .invoice-lines th {
+    /* Repeated table headings need breathing room on continuation pages too. */
+    padding-top: 18px;
+  }
+  .invoice-paper .invoice-totals {
+    max-width: 300px;
+    margin: 18px 0 20px auto;
+  }
+  .invoice-paper .invoice-totals > div {
+    padding: 6px 0;
+  }
+  .invoice-paper .invoice-totals .total {
+    padding-top: 12px;
+  }
+  .invoice-paper .invoice-payment {
+    margin-top: 20px;
+    padding-top: 16px;
+  }
+  .invoice-paper .invoice-payment p {
+    margin: 6px 0;
+  }
+  .invoice-paper .invoice-payment em {
+    margin-top: 12px;
   }
   .invoice-paper thead {
     display: table-header-group;
@@ -2344,6 +2584,10 @@ td .cell-title {
   }
   .invoice-paper footer {
     position: static;
+    margin-top: 22px;
+    padding-top: 12px;
+    break-inside: avoid;
+    break-before: avoid;
   }
   .invoice-paper * {
     box-shadow: none !important;
@@ -2351,30 +2595,6 @@ td .cell-title {
   .no-print {
     display: none !important;
   }
-  @page {
-    size: A4;
-    margin: 12mm;
-  }
-}
-.fiscal-qr {
-  display: flex;
-  gap: 18px;
-  align-items: center;
-  margin-top: 20px;
-  font-size: 10px;
-  color: #555;
-  break-inside: avoid;
-}
-.fiscal-qr img {
-  width: 32mm;
-  height: 32mm;
-}
-.fiscal-qr strong {
-  display: block;
-  margin-top: 8px;
-  color: #a47136;
-}
-@media print {
   .sidebar,
   .topbar,
   .app-footer,
@@ -2397,11 +2617,22 @@ td .cell-title {
   .modal > .alert {
     display: none !important;
   }
-  .modal:has(.invoice-paper) {
-    display: block !important;
-    position: static !important;
-  }
-  .invoice-paper {
-    position: static !important;
-  }
+}
+.fiscal-qr {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  margin-top: 20px;
+  font-size: 10px;
+  color: #555;
+  break-inside: avoid;
+}
+.fiscal-qr img {
+  width: 32mm;
+  height: 32mm;
+}
+.fiscal-qr strong {
+  display: block;
+  margin-top: 8px;
+  color: #a47136;
 }
