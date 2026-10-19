@@ -1,0 +1,81 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { PGlite } from '@electric-sql/pglite';
+import { readFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+
+test('invoice editing: offline mode, versions, audit, receipts and permanent fiscal protection', async () => {
+  const db = new PGlite();
+  try {
+    await db.exec(`create role anon; create role authenticated; create role service_role bypassrls;
+      create schema auth;
+      create table auth.users(id uuid primary key,email text,email_confirmed_at timestamptz);
+      create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
+      create function auth.role() returns text language sql stable as $$select nullif(current_setting('request.jwt.claim.role',true),'')$$;
+      grant usage on schema public,auth to anon,authenticated,service_role;
+      grant execute on all functions in schema auth to anon,authenticated,service_role;`);
+    await db.exec(await readFile('scripts/schema.template', 'utf8') + '\ncommit;');
+    const migration = await readFile('migrations/031_estabilidad_facturas.sql', 'utf8');
+    await db.exec(migration);
+    await db.exec(migration);
+    const admin = randomUUID(), viewer = randomUUID(), client = randomUUID();
+    await db.query(`insert into auth.users values($1,'admin@example.test',now()),($2,'viewer@example.test',now())`, [admin, viewer]);
+    await db.exec(`insert into rl_members values('admin@example.test','admin'),('viewer@example.test','viewer');
+      insert into rl_settings(id,company) values(1,'{"name":"Academia ficticia","tax_id":"12345678Z"}');`);
+    await db.query(`insert into rl_clients(id,name,tax_id) values($1,'Cliente ficticio','12345678Z')`, [client]);
+    const one = async (q: string, args: any[] = []) => (await db.query<any>(q, args)).rows[0];
+    const role = async (id: string, name = 'authenticated') => {
+      await db.exec('reset role');
+      await db.query(`select set_config('request.jwt.claim.sub',$1,false),set_config('request.jwt.claim.role',$2,false)`, [id,name]);
+      await db.exec(`set role ${name}`);
+    };
+    await role(admin);
+    const draft = {id: randomUUID(),version:0,client_id:client,date:'2026-01-01',invoice_type:'F1',environment:'production',exemption:'Actividad exenta',lines:[{description:'Clase',quantity:2,price:50,vat_rate:0,discount:0}],withholding_rate:0};
+    const save = async (p: any) => db.query('select rl_save_invoice($1::jsonb)', [JSON.stringify(p)]);
+    const get = () => one('select * from rl_invoices where id=$1',[draft.id]);
+    await save(draft);
+    await assert.rejects(() => save(draft), /ha cambiado|ya se guardó/);
+    assert.equal((await one('select count(*)::int n from rl_invoices')).n,1);
+    const beforeIssue = await get();
+    const number = (await one('select rl_issue_invoice($1) n',[draft.id])).n;
+    assert.equal((await one('select rl_issue_invoice($1) n',[draft.id])).n, number);
+    await assert.rejects(() => save({...draft,version:beforeIssue.version}), /ha cambiado/);
+    let inv = await get();
+    await save({...draft,version:inv.version,notes:'Cambio permitido'});
+    inv = await get();
+    assert.equal(inv.number,number);
+    assert.equal(inv.status,'issued');
+    assert.equal(inv.notes,'Cambio permitido');
+    assert.ok((await one("select count(*)::int n from rl_audit where entity='rl_invoices' and action='UPDATE' and after_data->>'notes'='Cambio permitido'")).n > 0);
+    await db.query('select rl_record_payment($1::jsonb)',[JSON.stringify({id:randomUUID(),invoice_id:draft.id,amount:70,date:'2026-01-01',method:'Transferencia',description:'Pago'})]);
+    inv = await get();
+    await assert.rejects(() => save({...draft,version:inv.version,lines:[{...draft.lines[0],price:30}]}), /inferior a los cobros/);
+    for (const patch of [{lines:[]},{lines:null},{withholding_rate:'NaN'},{lines:[{...draft.lines[0],discount:'NaN'}]}]) {
+      await assert.rejects(() => save({...draft,version:inv.version,...patch}));
+    }
+    await assert.rejects(() => save({...draft,version:inv.version,environment:'test'}), /entorno/);
+    await assert.rejects(() => save({...draft,version:inv.version,date:'2025-01-01'}), /año/);
+    await role(viewer);
+    await assert.rejects(() => save({...draft,version:inv.version}), /Acceso denegado/);
+    await role('', 'anon');
+    await assert.rejects(() => save(draft), /permission denied/);
+    await role(admin);
+    await db.exec('reset role; update rl_settings set verifactu_enabled=true');
+    await role(admin);
+    await assert.rejects(() => save({...draft,version:inv.version}), /VeriFactu/);
+    const fiscalId=randomUUID();
+    await save({...draft,id:fiscalId,environment:'test'});
+    await db.exec("reset role; update rl_settings set verifactu_environment='test'");
+    await role(admin);
+    await db.query('select rl_issue_invoice($1)',[fiscalId]);
+    await db.exec('reset role; update rl_settings set verifactu_enabled=false');
+    await role(admin);
+    const fiscal = await one('select * from rl_invoices where id=$1',[fiscalId]);
+    await assert.rejects(() => save({...draft,id:fiscalId,version:fiscal.version,environment:'test'}), /VeriFactu/);
+    await db.exec('reset role');
+    await assert.rejects(() => db.query("update rl_invoices set notes='bypass' where id=$1",[fiscalId]), /VeriFactu/);
+    await assert.rejects(() => db.query('delete from rl_invoices where id=$1',[draft.id]), /eliminar/);
+    assert.equal((await get()).number, number);
+    assert.equal((await one('select count(*)::int n from rl_payments')).n,1);
+  } finally { await db.close(); }
+});

@@ -1,6 +1,8 @@
 # Roboticlab · Gestión
 
-Aplicación privada de facturación, finanzas y gestión de clases. Next.js, React y Supabase, preparada para Render. La interfaz está en español e incluye modo claro y oscuro.
+Aplicación privada de facturación, finanzas y gestión de clases. Next.js, React y Supabase. Desplegada en https://gestionrl.apps.agdpanel.es sobre el VPS 185.2.101.52; se conserva la configuración original de Render como referencia. La interfaz está en español e incluye modo claro y oscuro.
+
+La actualización de octubre de 2026 y las instrucciones del VPS están en [docs/VPS.md](docs/VPS.md). No vuelvas a ejecutar la importación original sobre una instalación en uso.
 
 ## Instalación
 
@@ -26,11 +28,12 @@ El plan gratuito de Render puede suspender el servicio sin actividad. Para remis
 - Inicio con accesos rápidos, indicadores y actividad reciente.
 - Panel financiero mensual y anual, ingresos registrados, previsiones, gastos y resumen de facturación, con exportación CSV.
 - Clientes, alumnos y contactos activos o históricos.
-- Borradores con múltiples conceptos, descuentos, IVA y retención IRPF. El servidor calcula y redondea los importes. Las facturas emitidas reciben numeración correlativa y quedan bloqueadas frente a modificaciones.
+- Borradores con múltiples conceptos, descuentos, IVA y retención IRPF. El servidor calcula y redondea los importes. Las facturas emitidas reciben numeración correlativa. Con la migración 031 se pueden editar si VeriFactu está desactivado y no tienen registro fiscal; conservan su número, estado, PDF original, cobros y auditoría. Los registros fiscales permanecen protegidos.
 - Series separadas de facturas, rectificativas por diferencias y documentos de prueba. Duplicado de facturas como nuevos borradores.
 - Vista imprimible A4 y descarga exacta de los PDF originales. Para guardar nuevas facturas en PDF utiliza Imprimir → Guardar como PDF.
 - Cobros parciales, métodos de pago y límite de cobro por factura. Las operaciones tienen identificadores para evitar duplicados al repetir una solicitud.
 - Registro mensual con actividad, tarifa, unidades, bonos, horas, pagado, anticipos, previsto, días y notas. Clases por hora calculan cargos; bonos descuentan unidades; las tarifas manuales no inventan importes.
+- En Clases e ingresos, el botón «Registro mensual» debajo de cada alumno abre su ficha del mes para imprimir o guardar en PDF. Incluye las actividades del mismo contacto y periodo, días originales, resumen de horas/pagos, movimientos y cobros asociados. Guarda los cambios de la hoja antes de abrirla. No requiere SQL adicional ni acceso de los alumnos a la cuenta de administración.
 - Historial de movimientos de horas, ajustes con motivo y preparación de nuevos meses con alumnos activos.
 - Gastos previstos y pagados. Los previstos no reducen la tesorería hasta que se registren como pagados.
 - Archivo íntegro con las 61 pestañas y sus fórmulas guardadas, PDFs y Excel original descargables.
@@ -106,3 +109,7 @@ El SQL completo se ha ejecutado y repetido en PostgreSQL embebido (PGlite), comp
 Los scripts locales de importación y las fuentes privadas no son necesarios para desplegar. No se han subido datos al proyecto remoto: los cargará el SQL que ejecutará el propietario. Las copias JSON de la aplicación no sustituyen una copia completa de Supabase con sus usuarios y credenciales.
 
 Para repetir las pruebas del SQL, coloca el archivo entregado en `deliverables/supabase-roboticlab.sql` y ejecuta `npm run test:db`. Se usa una base temporal local, nunca el proyecto Supabase real.
+
+### Actualización automática en el VPS
+
+AGD Cloud sigue `DCK222/GestionRL`, rama `main`. Al hacer `git push origin main`, construye el Dockerfile y publica la nueva versión si supera las comprobaciones de salud y HTTPS. El progreso se consulta en [Gestión RL en AGD Cloud](https://panel.agdpanel.es/applications/cmvf84q9x000dq501d6mxpe92). Las migraciones SQL de Supabase se aplican por separado; no se ejecutan al hacer push.

@@ -41,6 +41,7 @@ export type Line = {
   historical_amount?: boolean;
 };
 export type Invoice = {
+  version?: number;
   id: string;
   number: string | null;
   client_id: string;

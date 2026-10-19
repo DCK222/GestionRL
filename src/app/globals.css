@@ -1129,6 +1129,116 @@ main {
   margin: 0;
   font-size: 12px;
 }
+.editable-sheet .sheet-report-button {
+  display: flex;
+  gap: 5px;
+  margin-top: 7px;
+  padding: 4px 7px;
+  font-size: 10px;
+  white-space: nowrap;
+}
+.student-month-paper {
+  min-height: 0;
+  line-height: 1.45;
+}
+.student-report-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+  border-bottom: 2px solid #164289;
+  padding-bottom: 16px;
+  margin-bottom: 16px;
+}
+.student-report-heading img {
+  object-fit: contain;
+  max-width: 42%;
+}
+.student-report-heading > div {
+  text-align: right;
+}
+.student-month-paper h2 {
+  font-size: 20px;
+}
+.student-month-paper h3 {
+  color: #164289;
+  font-size: 14px;
+  margin: 18px 0 8px;
+  break-after: avoid;
+}
+.student-month-paper .student-report-name {
+  font-size: 20px;
+}
+.student-month-paper p {
+  color: #333;
+  margin: 6px 0;
+}
+.student-report-totals {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  border: 1px solid #dce1e8;
+  padding: 12px;
+  margin: 16px 0;
+  break-inside: avoid;
+}
+.student-report-totals span {
+  display: block;
+  font-size: 10px;
+  color: #555;
+}
+.student-report-totals strong {
+  font-size: 16px;
+}
+.student-report-table {
+  table-layout: fixed;
+  width: 100%;
+}
+.student-month-paper .student-report-table th:first-child {
+  width: 22%;
+}
+.student-report-table td,
+.student-report-table th {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.student-report-table small {
+  display: block;
+  color: #555;
+}
+.student-report-days {
+  border-left: 3px solid #dce1e8;
+  padding: 4px 10px;
+  margin: 8px 0;
+}
+.student-report-days p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.student-month-paper .student-report-note {
+  color: #555;
+  font-size: 10px;
+}
+@media screen and (max-width: 600px) {
+  .modal:has(.student-month-paper) {
+    width: calc(100% - 16px);
+    max-width: none;
+  }
+  .invoice-paper.student-month-paper {
+    min-width: 0;
+    padding: 20px 14px;
+    margin: 12px 0;
+    font-size: 11px;
+  }
+  .student-report-totals {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .student-month-paper .student-report-table th,
+  .student-month-paper .student-report-table td {
+    padding: 7px 4px;
+    font-size: 10px;
+  }
+}
 @media (max-width: 760px) {
   .editable-sheet .sheet-person {
     min-width: 140px;
@@ -2591,6 +2701,34 @@ td .cell-title {
   }
   .invoice-paper * {
     box-shadow: none !important;
+  }
+  .invoice-paper.student-month-paper {
+    font-size: 11px;
+    line-height: 1.35;
+  }
+  .student-month-paper .student-report-heading {
+    padding-bottom: 12px;
+    margin-bottom: 12px;
+    break-inside: avoid;
+  }
+  .student-month-paper h3 {
+    margin: 12px 0 6px;
+  }
+  .student-month-paper .student-report-totals {
+    padding: 10px;
+    margin: 12px 0;
+  }
+  .student-month-paper .student-report-table th,
+  .student-month-paper .student-report-table td {
+    padding: 7px 6px;
+    font-size: 11px;
+  }
+  .student-month-paper .student-report-table th {
+    padding-top: 18px;
+  }
+  .student-month-paper footer {
+    margin-top: 14px;
+    padding-top: 10px;
   }
   .no-print {
     display: none !important;

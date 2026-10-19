@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import {
   LayoutDashboard,
@@ -114,6 +114,8 @@ export function Workspace() {
       null,
     ),
     [period, setPeriod] = useState(today().slice(0, 7));
+  const requestSequence = useRef(0);
+  const identity = useRef<string | null>(null);
   const notify = useCallback(
     (message: string, error = false) => setToast({ message, error }),
     [],
@@ -127,23 +129,42 @@ export function Workspace() {
   useEffect(() => {
     const t = localStorage.getItem("rl-theme") || "light";
     setTheme(t);
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
+    let active = true;
+    let authEventReceived = false;
+    function acceptSession(next: Session | null) {
+      if (!active) return;
+      if (identity.current !== (next?.user.id ?? null)) {
+        requestSequence.current += 1;
+        identity.current = next?.user.id ?? null;
+        setData(initial);
+        setFailure("");
+        setPage("home");
+        setUnsavedChanges(false);
+      }
+      setSession(next);
       setReady(true);
+    }
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, next) => {
+      authEventReceived = true;
+      acceptSession(next);
     });
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, s) => {
-      setSession(s);
-      if (!s) setData(initial);
+    void supabase.auth.getSession().then(({ data, error }) => {
+      if (!active || authEventReceived) return;
+      if (error) notify("No se pudo recuperar la sesión. Vuelve a iniciar sesión.", true);
+      acceptSession(data.session);
+    }).catch(() => {
+      if (active && !authEventReceived) acceptSession(null);
     });
-    return () => subscription.unsubscribe();
+    return () => { active = false; subscription.unsubscribe(); };
   }, []);
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     localStorage.setItem("rl-theme", theme);
   }, [theme]);
   const reload = useCallback(async () => {
+    const sequence = ++requestSequence.current;
+    const userId = identity.current;
+    if (!userId) return;
     setLoading(true);
     try {
       const [
@@ -170,8 +191,9 @@ export function Workspace() {
         ),
         readAll<Data["fiscal"][number]>("rl_fiscal_records"),
         readAll<Settings>("rl_settings"),
-        supabase.from("rl_members").select("*"),
+        supabase.from("rl_members").select("*").abortSignal(AbortSignal.timeout(20000)),
       ]);
+      if (sequence !== requestSequence.current || userId !== identity.current) return;
       if (members.error) throw members.error;
       if (!settings.length)
         throw new Error(
@@ -191,17 +213,18 @@ export function Workspace() {
       });
       setFailure("");
     } catch (e) {
+      if (sequence !== requestSequence.current || userId !== identity.current) return;
       setFailure(
         e instanceof Error ? e.message : "No se pudieron cargar los datos",
       );
     } finally {
-      setLoading(false);
+      if (sequence === requestSequence.current) setLoading(false);
     }
   }, []);
   useEffect(() => {
     if (session) void reload();
   }, [session?.user.id, reload]);
-  const role = data.members.find((m) => m.email === session?.user.email)?.role;
+  const role = data.members.find((m) => m.email === session?.user.email?.toLowerCase())?.role;
   const shared: Shared = {
     data,
     reload,
@@ -269,7 +292,7 @@ export function Workspace() {
       ]
     : [];
   return (
-    <div className="app-shell">
+    <div className="app-shell" key={session.user.id}>
       <aside className={mobile ? "sidebar open" : "sidebar"}>
         <a
           className="brand"
@@ -411,22 +434,28 @@ export function Workspace() {
             className="icon-button"
             title="Cerrar sesión"
             aria-label="Cerrar sesión"
-            onClick={() => void supabase.auth.signOut()}
+            onClick={() => {
+              if (unsavedChanges && !window.confirm("Hay cambios sin guardar. ¿Quieres cerrar sesión y descartarlos?")) return;
+              void supabase.auth.signOut().then(({ error }) => {
+                if (error) notify("No se pudo cerrar sesión. Inténtalo de nuevo.", true);
+              });
+            }}
           >
             <LogOut size={18} />
           </button>
         </header>
         <main>
-          {failure ? (
+          {failure && (
             <div className="alert error">
               <h3>No se han podido cargar los datos</h3>
               <p>{failure}</p>
               <button onClick={() => void reload()}>Reintentar</button>
             </div>
-          ) : !data.settings ? (
+          )}
+          {!data.settings ? (
             <div className="loading-panel">
               <RefreshCw className="spin" />
-              Conectando con Supabase…
+              {failure ? "Conservamos tu sesión. Pulsa Reintentar para volver a cargar." : "Conectando con Supabase…"}
             </div>
           ) : (
             <>
@@ -467,7 +496,7 @@ export function Workspace() {
           <span>Roboticlab · Tu academia, conectada</span>
           <span>
             <span className="dot green" /> Supabase{" "}
-            {loading ? "· actualizando" : "· conectado"}
+            {loading ? "· actualizando" : failure ? "· no se pudo actualizar" : "· datos cargados"}
           </span>
         </footer>
       </div>

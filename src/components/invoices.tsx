@@ -57,6 +57,8 @@ export function Invoices(shared: Shared & { initialClientId?: string }) {
     [pay, setPay] = useState<Invoice | null>(null),
     [busy, setBusy] = useState(false),
     [issue, setIssue] = useState<Invoice | null>(null);
+  const canEdit = (invoice: Invoice) => invoice.status === "draft" ||
+    (!data.settings?.verifactu_enabled && !data.fiscal.some((r) => r.invoice_id === invoice.id));
   const selected = data.invoices.find((i) => i.id === view);
   const filterClient = data.clients.find((c) => c.id === clientId);
   const rows = data.invoices
@@ -123,7 +125,8 @@ export function Invoices(shared: Shared & { initialClientId?: string }) {
     });
   }
   async function issueNow() {
-    if (!issue) return;
+    if (!issue || busy) return;
+    let deliveryPending = false;
     setBusy(true);
     try {
       await rpc("rl_issue_invoice", { invoice: issue.id });
@@ -131,18 +134,19 @@ export function Invoices(shared: Shared & { initialClientId?: string }) {
         try {
           await api("/api/verifactu", { action: "process" });
         } catch {
-          notify(
-            "Factura emitida. Envío pendiente en la cola VeriFactu.",
-            true,
-          );
+          deliveryPending = true;
         }
       }
       setIssue(null);
       await reload();
-      notify("Factura emitida. El documento queda protegido frente a cambios.");
+      if (!data.settings?.verifactu_enabled)
+        notify("Factura emitida. Puedes editarla mientras VeriFactu esté desactivado y no tenga registro fiscal.");
       if (data.settings?.verifactu_enabled)
         notify(
-          "Registro fiscal creado. Consulta su envío en Configuración → VeriFactu.",
+          deliveryPending
+            ? "Factura emitida. Envío pendiente en la cola VeriFactu. Consulta Configuración → VeriFactu."
+            : "Registro fiscal creado. Consulta su envío en Configuración → VeriFactu.",
+          deliveryPending,
         );
     } catch (e) {
       notify((e as Error).message, true);
@@ -397,13 +401,6 @@ export function Invoices(shared: Shared & { initialClientId?: string }) {
           <span>EUR · Importes con IVA y retención aplicados</span>
         </div>
       </section>
-      {editing && (
-        <InvoiceEditor
-          {...shared}
-          initial={editing}
-          onClose={() => setEditing(null)}
-        />
-      )}
       {selected && (
         <Modal
           title={selected.number || "Borrador de factura"}
@@ -430,11 +427,13 @@ export function Invoices(shared: Shared & { initialClientId?: string }) {
                 <button onClick={() => duplicate(selected)}>
                   <Copy size={16} /> Duplicar
                 </button>
+                {canEdit(selected) && (
+                  <button onClick={() => setEditing(selected)}>
+                    {selected.status === "draft" ? "Editar borrador" : "Editar factura"}
+                  </button>
+                )}
                 {selected.status === "draft" ? (
                   <>
-                    <button onClick={() => setEditing(selected)}>
-                      Editar borrador
-                    </button>
                     <button
                       className="primary"
                       onClick={() => setIssue(selected)}
@@ -477,7 +476,7 @@ export function Invoices(shared: Shared & { initialClientId?: string }) {
       )}
       {pay && (
         <Modal title="Registrar cobro de factura" onClose={() => setPay(null)}>
-          <PaymentForm {...shared} invoice={pay} onClose={() => setPay(null)} />
+          <PaymentForm {...shared} invoice={data.invoices.find((i) => i.id === pay.id) || pay} onClose={() => setPay(null)} />
         </Modal>
       )}
       {issue && (
@@ -489,13 +488,14 @@ export function Invoices(shared: Shared & { initialClientId?: string }) {
               <strong>{money(issue.total)}</strong>.
             </p>
             <p>
-              Una vez emitida, las correcciones se realizarán mediante una
-              factura rectificativa.
+              {data.settings?.verifactu_enabled
+                ? "Una vez emitida, las correcciones se realizarán mediante una factura rectificativa."
+                : "VeriFactu está desactivado. Podrás editar la factura conservando su número y el historial de cambios."}
             </p>
             <Badge tone={issue.environment === "test" ? "amber" : "blue"}>
               {issue.environment === "test"
                 ? "PRUEBA · sin validez fiscal"
-                : "Producción"}
+                : data.settings?.verifactu_enabled ? "Producción · VeriFactu" : "Sin VeriFactu"}
             </Badge>
             {data.settings?.verifactu_enabled && (
               <p>
@@ -504,8 +504,8 @@ export function Invoices(shared: Shared & { initialClientId?: string }) {
               </p>
             )}
           </div>
-          <div className="modal-footer">
-            <button onClick={() => setIssue(null)}>Volver</button>
+          <div className="modal-footer" aria-busy={busy}>
+            <button data-dismiss-modal disabled={busy} onClick={() => setIssue(null)}>Volver</button>
             <button
               className="primary"
               disabled={busy}
@@ -516,6 +516,13 @@ export function Invoices(shared: Shared & { initialClientId?: string }) {
           </div>
         </Modal>
       )}
+      {editing && (
+        <InvoiceEditor
+          {...shared}
+          initial={editing}
+          onClose={() => setEditing(null)}
+        />
+      )}
     </>
   );
 }
@@ -525,7 +532,14 @@ function InvoiceEditor({
   ...shared
 }: Shared & { initial: Partial<Invoice>; onClose: () => void }) {
   const { data, notify, reload } = shared;
-  const [form, setForm] = useState(initial),
+  const [form, setForm] = useState(() => ({
+      ...initial,
+      id: initial.id || crypto.randomUUID(),
+      version: initial.version ?? 0,
+      lines: initial.lines?.map((l) => l.historical_amount
+        ? { ...l, quantity: 1, price: l.base ?? 0, discount: 0, historical_amount: false }
+        : { ...l }),
+    })),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
   const lines = form.lines || [];
@@ -539,6 +553,9 @@ function InvoiceEditor({
     input?.focus();
     input?.scrollIntoView({ block: "nearest" });
   }, [lines.length]);
+  const existing = !!initial.id;
+  const issued = !!initial.status && initial.status !== "draft";
+  const submitting = useRef(false);
   const totals = calculateInvoice(lines, form.withholding_rate || 0);
   function field<K extends keyof Invoice>(key: K, v: Invoice[K]) {
     setForm((f) => ({ ...f, [key]: v }));
@@ -563,28 +580,33 @@ function InvoiceEditor({
   }
   return (
     <Modal
-      title={form.id ? "Editar borrador" : "Nueva factura"}
+      title={issued ? "Editar factura" : existing ? "Editar borrador" : "Nueva factura"}
       onClose={onClose}
       wide
     >
       <form
+        aria-busy={busy}
         onSubmit={async (e) => {
           e.preventDefault();
+          if (submitting.current) return;
+          submitting.current = true;
           setBusy(true);
           setError("");
           try {
             await rpc("rl_save_invoice", { p: form });
             await reload();
-            notify("Borrador guardado. Puedes revisarlo antes de emitir.");
+            notify(issued ? "Factura actualizada. Se conserva su número y queda registrado el cambio." : "Borrador guardado. Puedes revisarlo antes de emitir.");
             onClose();
           } catch (e) {
             setError((e as Error).message);
           } finally {
+            submitting.current = false;
             setBusy(false);
           }
         }}
       >
         <div className="modal-body">
+          {issued && <div className="alert info">Editando {initial.number}. Se conserva la numeración, los cobros y el historial. El PDF original, si existe, conserva el documento importado.</div>}
           <div className="form-grid three">
             <Field label="Cliente">
               <select
@@ -632,6 +654,7 @@ function InvoiceEditor({
             <Field label="Entorno">
               <select
                 value={form.environment}
+                disabled={issued}
                 onChange={(e) =>
                   field("environment", e.target.value as Invoice["environment"])
                 }
@@ -829,11 +852,11 @@ function InvoiceEditor({
           )}
         </div>
         <div className="modal-footer">
-          <button type="button" onClick={onClose}>
+          <button type="button" data-dismiss-modal onClick={onClose}>
             Cancelar
           </button>
           <button className="primary" disabled={busy || !data.clients.length}>
-            {busy ? "Guardando…" : "Guardar borrador"}
+            {busy ? "Guardando…" : issued ? "Guardar cambios" : "Guardar borrador"}
           </button>
         </div>
       </form>

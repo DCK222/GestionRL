@@ -21,7 +21,8 @@ export async function readAll<T>(table: string, columns = "*"): Promise<T[]> {
       .from(table)
       .select(columns)
       .order("id", { ascending: true })
-      .range(start, start + 999);
+      .range(start, start + 999)
+      .abortSignal(AbortSignal.timeout(20000));
     if (error) throw new Error(error.message);
     result.push(...(data as T[]));
     if (data.length < 1000) break;

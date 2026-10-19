@@ -35,7 +35,7 @@ export function readiness() {
       ok: !!process.env.VERIFACTU_DECLARATION_URL,
     },
     {
-      label: "Servicio Render siempre activo",
+      label: "Servidor siempre activo",
       ok: process.env.VERIFACTU_ALWAYS_ON === "true",
     },
     {

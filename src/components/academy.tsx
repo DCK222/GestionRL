@@ -24,6 +24,7 @@ import { SectionTitle, Stat, Badge, Empty, Field, Modal } from "./ui";
 import { PaymentForm } from "./records";
 import { AcademySheet } from "./academy-sheet";
 import { searchText } from "@/lib/clients";
+import { StudentMonthReport } from "./student-month-report";
 export function Academy(
   shared: Shared & { period: string; setPeriod: (s: string) => void },
 ) {
@@ -36,6 +37,7 @@ export function Academy(
     [clone, setClone] = useState(false),
     [history, setHistory] = useState<Record<string, unknown>[] | null>(null);
   const [dirty, setDirty] = useState(false);
+  const [report, setReport] = useState<Enrollment | null>(null);
   const periods = [
     ...new Set([...data.enrollments.map((e) => e.period), period]),
   ]
@@ -217,6 +219,7 @@ export function Academy(
           onPayment={setPayment}
           onEdit={setEdit}
           onHistory={(row) => void showHistory(row)}
+          onReport={setReport}
           onDirty={setDirty}
         />
         {!rows.length && (
@@ -263,6 +266,13 @@ export function Academy(
         </Modal>
       )}
       {clone && <CloneMonth {...shared} onClose={() => setClone(false)} />}
+      {report && (
+        <StudentMonthReport
+          data={data}
+          selected={report}
+          onClose={() => setReport(null)}
+        />
+      )}
       {history && (
         <Modal
           title="Historial de horas y bonos"
@@ -315,7 +325,7 @@ function EnrollmentEditor({
       title={f.id ? "Editar registro mensual" : "Añadir inscripción"}
       onClose={onClose}
     >
-      <form
+      <form aria-busy={busy}
         onSubmit={async (e) => {
           e.preventDefault();
           setBusy(true);
@@ -452,7 +462,7 @@ function EnrollmentEditor({
           {error && <div className="alert error">{error}</div>}
         </div>
         <div className="modal-footer">
-          <button type="button" onClick={onClose}>
+          <button type="button" data-dismiss-modal onClick={onClose}>
             Cancelar
           </button>
           <button className="primary" disabled={busy}>
@@ -481,7 +491,7 @@ function HoursForm({
   const requestId = useMemo(() => crypto.randomUUID(), []);
   return (
     <Modal title={`Horas y bonos · ${name}`} onClose={onClose}>
-      <form
+      <form aria-busy={busy}
         onSubmit={async (e) => {
           e.preventDefault();
           setBusy(true);
@@ -556,7 +566,7 @@ function HoursForm({
           {error && <div className="alert error">{error}</div>}
         </div>
         <div className="modal-footer">
-          <button type="button" onClick={onClose}>
+          <button type="button" data-dismiss-modal onClick={onClose}>
             Cancelar
           </button>
           <button className="primary" disabled={busy}>
@@ -585,7 +595,7 @@ function CloneMonth({
     [error, setError] = useState("");
   return (
     <Modal title="Preparar un nuevo mes" onClose={onClose}>
-      <form
+      <form aria-busy={busy}
         onSubmit={async (e) => {
           e.preventDefault();
           setBusy(true);
@@ -631,7 +641,7 @@ function CloneMonth({
           {error && <div className="alert error">{error}</div>}
         </div>
         <div className="modal-footer">
-          <button type="button" onClick={onClose}>
+          <button type="button" data-dismiss-modal onClick={onClose}>
             Cancelar
           </button>
           <button className="primary" disabled={busy}>

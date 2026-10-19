@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, useId, type ReactNode } from "react";
 import { X, ArrowUpRight, FileQuestion } from "lucide-react";
 export function Badge({
   children,
@@ -81,6 +81,19 @@ export function Modal({
   wide?: boolean;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const [dirty, setDirty] = useState(false);
+  const headingId = useId();
+  function requestClose() {
+    if (ref.current?.querySelector('[aria-busy="true"]')) return;
+    if (dirty && !window.confirm("Hay cambios sin guardar. ¿Quieres cerrar y descartarlos?")) return;
+    onClose();
+  }
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
   useEffect(() => {
     const d = ref.current;
     d?.showModal();
@@ -90,14 +103,20 @@ export function Modal({
     <dialog
       ref={ref}
       className={wide ? "modal wide" : "modal"}
-      onCancel={onClose}
-      onClick={(e) => {
-        if (e.target === ref.current) onClose();
+      aria-labelledby={headingId}
+      onChangeCapture={() => setDirty(true)}
+      onClickCapture={(event) => {
+        const button = (event.target as HTMLElement).closest('button[data-dismiss-modal]');
+        if (!button) return;
+        event.preventDefault();
+        event.stopPropagation();
+        requestClose();
       }}
+      onCancel={(e) => { e.preventDefault(); requestClose(); }}
     >
       <header>
-        <h2>{title}</h2>
-        <button className="icon-button" onClick={onClose} aria-label="Cerrar">
+        <h2 id={headingId}>{title}</h2>
+        <button type="button" className="icon-button" onClick={requestClose} aria-label="Cerrar">
           <X size={20} />
         </button>
       </header>

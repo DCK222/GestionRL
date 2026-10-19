@@ -12,6 +12,7 @@ await db.exec(
   await fs.readFile("deliverables/supabase-roboticlab.sql", "utf8"),
 );
 await db.exec(await fs.readFile("migrations/030_clientes_y_hoja.sql", "utf8"));
+await db.exec(await fs.readFile("migrations/031_estabilidad_facturas.sql", "utf8"));
 const admin = (
   await db.query(
     "select id from auth.users where email='admin@roboticlab.internal'",
@@ -33,6 +34,7 @@ const context = await browser.newContext({
 });
 const page = await context.newPage();
 const errors = [];
+let failReportHours = false;
 page.on("pageerror", (e) => errors.push(e.message));
 const numberKeys = new Set([
   "rate",
@@ -119,6 +121,8 @@ await page.route(
       }
     }
     const table = u.pathname.split("/").at(-1);
+    if (table === "rl_hours" && failReportHours)
+      return fulfill({ message: "Fallo de carga simulado" }, 503);
     if (!/^rl_[a-z_]+$/.test(table))
       return fulfill({ message: "unknown" }, 404);
     try {
@@ -384,6 +388,13 @@ try {
   const sheet = page.locator(".editable-sheet");
   const cell = (r, c) => sheet.locator(`[data-row="${r}"][data-col="${c}"]`);
   await cell(0, 1).fill("Grupo editado en hoja");
+  assert.equal(
+    await sheet
+      .getByRole("button", { name: /^Registro mensual de/ })
+      .first()
+      .isDisabled(),
+    true,
+  );
   await cell(0, 1).press("Enter");
   assert.equal(
     await cell(1, 1).evaluate((el) => el === document.activeElement),
@@ -460,6 +471,75 @@ try {
     .click();
   await page.getByText("Movimiento registrado", { exact: true }).waitFor();
   console.log("PASS browser hour ledger");
+  failReportHours = true;
+  await page
+    .getByRole("button", { name: "Registro mensual de LUCIA", exact: true })
+    .click();
+  await page.getByText(/No se pudo cargar el registro completo/).waitFor();
+  assert.equal(
+    await page
+      .getByRole("button", { name: "Imprimir / Guardar PDF", exact: true })
+      .isDisabled(),
+    true,
+  );
+  failReportHours = false;
+  await page.getByRole("button", { name: "Reintentar", exact: true }).click();
+  const report = page.locator(".student-month-paper");
+  await report.waitFor();
+  assert.equal(
+    await report.locator(".student-report-name").innerText(),
+    "LUCIA",
+  );
+  assert.match(await report.innerText(), /Clase registrada desde la prueba/);
+  assert.match(await report.innerText(), /12,50\s*€ \/ hora/);
+  assert.doesNotMatch(await report.innerText(), /Nota hoja [12]/);
+  const luciaRows = (
+    await db.query(
+      "select e.* from rl_enrollments e join rl_students s on s.id=e.student_id where s.name='LUCIA' and e.period=$1",
+      [await page.getByLabel("Mes de clases", { exact: true }).inputValue()],
+    )
+  ).rows;
+  for (const row of luciaRows)
+    if (row.class_days)
+      assert.ok((await report.innerText()).includes(row.class_days));
+  await page.screenshot({
+    path: out + "/student-month-report.png",
+    fullPage: true,
+  });
+  await page.emulateMedia({ media: "print" });
+  await page.pdf({
+    path: out + "/student-month-report.pdf",
+    format: "A4",
+    preferCSSPageSize: true,
+    printBackground: true,
+    displayHeaderFooter: true,
+  });
+  await page.emulateMedia({ media: "screen" });
+  await page.setViewportSize({ width: 390, height: 844 });
+  assert.equal(
+    await page
+      .locator("dialog[open]")
+      .evaluate((el) => el.scrollWidth > el.clientWidth),
+    false,
+  );
+  await page.screenshot({
+    path: out + "/student-month-report-mobile.png",
+    fullPage: true,
+  });
+  await page.evaluate(() => {
+    window.print = () => {
+      window.__reportPrinted = true;
+    };
+  });
+  await page
+    .getByRole("button", { name: "Imprimir / Guardar PDF", exact: true })
+    .click();
+  await page.waitForFunction(() => window.__reportPrinted === true);
+  await page.getByRole("button", { name: "Cerrar", exact: true }).click();
+  await page.setViewportSize({ width: 1440, height: 1080 });
+  console.log(
+    "PASS monthly student report: original days, isolated data, print, mobile, unsaved guard, load failure and retry",
+  );
   await page
     .getByRole("button", { name: "Clientes y alumnos", exact: true })
     .click();

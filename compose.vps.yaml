@@ -1,0 +1,31 @@
+services:
+  web:
+    image: gestionrl:${GESTIONRL_RELEASE:-latest}
+    build:
+      context: .
+      args:
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:?required}
+        NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY:?required}
+    container_name: gestionrl-web
+    restart: unless-stopped
+    init: true
+    env_file: .env.production
+    environment:
+      NODE_OPTIONS: --max-old-space-size=512
+    mem_limit: 768m
+    cpus: 1.0
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    networks:
+      edge:
+        aliases: [gestionrl-web]
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+networks:
+  edge:
+    external: true
+    name: agd-cloud_edge

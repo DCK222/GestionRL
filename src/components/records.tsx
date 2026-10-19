@@ -261,7 +261,7 @@ export function Contacts({
           title={`${edit.id ? "Editar" : "Nuevo"} ${tab === "clients" ? "cliente" : "alumno"}`}
           onClose={() => setEdit(null)}
         >
-          <form
+          <form aria-busy={busy}
             onSubmit={async (e) => {
               e.preventDefault();
               setBusy(true);
@@ -372,7 +372,7 @@ export function Contacts({
               {error && <div className="alert error">{error}</div>}
             </div>
             <div className="modal-footer">
-              <button type="button" onClick={() => setEdit(null)}>
+              <button type="button" data-dismiss-modal onClick={() => setEdit(null)}>
                 Cancelar
               </button>
               <button className="primary" disabled={busy}>
@@ -506,7 +506,7 @@ export function Expenses({
           title={edit.id ? "Revisar gasto" : "Nuevo gasto"}
           onClose={() => setEdit(null)}
         >
-          <form
+          <form aria-busy={busy}
             onSubmit={async (e) => {
               e.preventDefault();
               setBusy(true);
@@ -603,7 +603,7 @@ export function Expenses({
               {error && <div className="alert error">{error}</div>}
             </div>
             <div className="modal-footer">
-              <button type="button" onClick={() => setEdit(null)}>
+              <button type="button" data-dismiss-modal onClick={() => setEdit(null)}>
                 Cancelar
               </button>
               <button className="primary" disabled={busy}>
@@ -717,7 +717,7 @@ export function PaymentForm({
     [confirmed, setConfirmed] = useState(false);
   const id = useMemo(() => crypto.randomUUID(), []);
   return (
-    <form
+    <form aria-busy={busy}
       onSubmit={async (e) => {
         e.preventDefault();
         setBusy(true);
@@ -811,7 +811,7 @@ export function PaymentForm({
         {error && <div className="alert error">{error}</div>}
       </div>
       <div className="modal-footer">
-        <button type="button" onClick={onClose}>
+        <button type="button" data-dismiss-modal onClick={onClose}>
           Cancelar
         </button>
         <button className="primary" disabled={busy}>

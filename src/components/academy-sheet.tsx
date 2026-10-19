@@ -5,6 +5,7 @@ import {
   Clock3,
   History,
   Pencil,
+  Printer,
   Save,
   Wallet,
 } from "lucide-react";
@@ -29,6 +30,7 @@ export function AcademySheet({
   onPayment,
   onEdit,
   onHistory,
+  onReport,
   onDirty,
   ...shared
 }: Shared & {
@@ -37,6 +39,7 @@ export function AcademySheet({
   onPayment: (row: Enrollment) => void;
   onEdit: (row: Enrollment) => void;
   onHistory: (row: Enrollment) => void;
+  onReport: (row: Enrollment) => void;
   onDirty: (dirty: boolean) => void;
 }) {
   const { data, canWrite, notify, reload, setUnsavedChanges } = shared;
@@ -264,6 +267,15 @@ export function AcademySheet({
                     <small>
                       {person?.phone || person?.email || row.category}
                     </small>
+                    <button
+                      className="sheet-report-button"
+                      disabled={pending > 0 || busy}
+                      title="Ver e imprimir el registro del alumno en este mes"
+                      aria-label={`Registro mensual de ${name(row)}`}
+                      onClick={() => onReport(row)}
+                    >
+                      <Printer size={13} /> Registro mensual
+                    </button>
                   </td>
                   {sheetColumns.map((column, colIndex) => {
                     const value =
