@@ -22,6 +22,7 @@ El plan gratuito de Render puede suspender el servicio sin actividad. Para remis
 
 - Directorio de clientes recuperados automáticamente al abrir Clientes y alumnos: completa los campos vacíos con la factura más reciente disponible y evita duplicados por NIF o referencia. No sustituye los datos que ya has editado. Cada ficha enlaza con sus facturas.
 - Facturación con filtro por cliente, fechas, año y estado; búsqueda de números, NIF y conceptos sin depender de tildes; ordenación por fecha o importe y exportación de los resultados filtrados.
+- Pestañas de Facturas y Presupuestos. Los presupuestos tienen numeración anual propia `P-AAAA-0001`, fecha de validez, conceptos, descuentos, IVA, IRPF, condiciones y vista imprimible/PDF. Estados borrador, enviado (marcado manual, sin envío de correo), aceptado, rechazado y convertido; búsqueda, filtros y CSV. Editar devuelve el presupuesto a borrador. La conversión crea una única factura en borrador con fecha actual, conservando el presupuesto y los enlaces en ambos documentos; no emite ni registra cobros. Los presupuestos caducados requieren ampliar la validez y los rechazados cambiar de estado antes de convertir.
 - Hoja mensual editable en Clases e ingresos: pestañas de meses y actividades, edición directa, Tab/Enter, pegado de bloques tabulados desde Excel, coma decimal, fila de totales y guardado conjunto de cambios. El guardado comprueba versiones y revierte todo el lote si una fila cambió en otra sesión. Las columnas de alumnos y cabeceras permanecen visibles al desplazar la hoja.
 - Botón de recálculo por fila: previsto = horas × precio − pagado − anticipo para tarifas por hora. El recálculo es explícito para respetar el histórico manual. Editar pagado corrige el registro; para nuevos movimientos con fecha usa Registrar cobro o Registrar clase.
 
@@ -96,6 +97,8 @@ Fuentes oficiales: [información técnica AEAT](https://sede.agenciatributaria.g
 
 ## Desarrollo y comprobaciones
 
+Para añadir presupuestos a una instalación existente, ejecutar `migrations/032_presupuestos.sql` en el SQL Editor de Supabase después de la migración 031, antes de desplegar este frontend. Es una actualización incremental y repetible: crea la tabla, permisos, auditoría y funciones de presupuestos, sin importar datos ni modificar facturas existentes. El despliegue del frontend no aplica SQL automáticamente.
+
 Requiere Node.js 22. Copia `.env.example` como `.env.local`, ejecuta `npm ci` y `npm run dev`. Para producción: `npm run build` y `npm start`.
 
 ```sh
@@ -105,6 +108,8 @@ npm run build
 ```
 
 El SQL completo se ha ejecutado y repetido en PostgreSQL embebido (PGlite), comprobando RLS, permisos, redondeo, numeración, inmutabilidad, cobros, horas y encadenamiento fiscal. Las pruebas de navegador usan un adaptador local de Supabase: no crean usuarios ni modifican el proyecto remoto. La conexión al servicio Auth remoto se ha verificado por lectura, HTTP 200.
+
+Para comprobar el recorrido de presupuestos con datos ficticios, inicia `node scripts/local-fixture.mjs` y, en otra terminal, ejecuta `node scripts/quotes-browser-check.mjs`. Comprueba creación, estados, conversión, navegación entre documentos, edición/emisión de la factura resultante, exportación y móvil. Las capturas quedan en `test-results/quotes`. Usa Chrome local y los puertos de loopback 3101 y 4545.
 
 Los scripts locales de importación y las fuentes privadas no son necesarios para desplegar. No se han subido datos al proyecto remoto: los cargará el SQL que ejecutará el propietario. Las copias JSON de la aplicación no sustituyen una copia completa de Supabase con sus usuarios y credenciales.
 

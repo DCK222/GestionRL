@@ -15,6 +15,7 @@ grant usage on schema auth,public to authenticated;grant execute on all function
 await db.exec(await readFile('scripts/schema.template','utf8')+'\ncommit;');
 await db.exec(await readFile('migrations/030_clientes_y_hoja.sql','utf8'));
 await db.exec(await readFile('migrations/031_estabilidad_facturas.sql','utf8'));
+await db.exec(await readFile('migrations/032_presupuestos.sql','utf8'));
 await db.exec(`insert into auth.users values('${uid}','admin@roboticlab.internal',now());
 insert into rl_members values('admin@roboticlab.internal','admin');
 insert into rl_settings(id,company) values(1,'{"name":"Academia de pruebas","brand":"Demo","tax_id":"12345678Z","address":"Dirección ficticia","email":"admin@example.test","payment_terms":"Transferencia","exemption":"Actividad exenta"}');

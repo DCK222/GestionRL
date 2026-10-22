@@ -16,7 +16,7 @@ import {
   Wallet,
 } from "lucide-react";
 import type { Shared } from "./workspace";
-import type { Invoice, Line } from "@/lib/types";
+import type { Invoice, Line, Quote } from "@/lib/types";
 import { supabase, rpc, api } from "@/lib/supabase";
 import {
   money,
@@ -31,6 +31,7 @@ import {
 import { SectionTitle, Badge, Empty, Modal, Field } from "./ui";
 import { PaymentForm } from "./records";
 import { invoiceMatchesClient, searchText } from "@/lib/clients";
+import { Quotes } from "./quotes";
 export async function downloadDocument(id: string) {
   const { data, error } = await supabase
     .from("rl_documents")
@@ -44,6 +45,66 @@ export async function downloadDocument(id: string) {
   download(data.name, bytes, data.mime);
 }
 export function Invoices(shared: Shared & { initialClientId?: string }) {
+  const [tab, setTab] = useState<"invoices" | "quotes">("invoices");
+  const [invoiceId, setInvoiceId] = useState<string | undefined>();
+  const [quoteId, setQuoteId] = useState<string | undefined>();
+  return (
+    <>
+      <div className="tabs no-print" aria-label="Documentos de facturación">
+        <button
+          className={tab === "invoices" ? "active" : ""}
+          aria-pressed={tab === "invoices"}
+          onClick={() => {
+            setQuoteId(undefined);
+            setInvoiceId(undefined);
+            setTab("invoices");
+          }}
+        >
+          Facturas ({shared.data.invoices.length})
+        </button>
+        <button
+          className={tab === "quotes" ? "active" : ""}
+          aria-pressed={tab === "quotes"}
+          onClick={() => {
+            setInvoiceId(undefined);
+            setQuoteId(undefined);
+            setTab("quotes");
+          }}
+        >
+          Presupuestos ({shared.data.quotes.length})
+        </button>
+      </div>
+      {tab === "invoices" ? (
+        <InvoiceList
+          {...shared}
+          initialInvoiceId={invoiceId}
+          onQuote={(id) => {
+            setInvoiceId(undefined);
+            setQuoteId(id);
+            setTab("quotes");
+          }}
+        />
+      ) : (
+        <Quotes
+          {...shared}
+          initialQuoteId={quoteId}
+          onInvoice={(id) => {
+            setQuoteId(undefined);
+            setInvoiceId(id);
+            setTab("invoices");
+          }}
+        />
+      )}
+    </>
+  );
+}
+function InvoiceList(
+  shared: Shared & {
+    initialClientId?: string;
+    initialInvoiceId?: string;
+    onQuote: (id: string) => void;
+  },
+) {
   const { data, canWrite, notify, reload } = shared;
   const [search, setSearch] = useState(""),
     [clientId, setClientId] = useState(shared.initialClientId || "all"),
@@ -53,13 +114,17 @@ export function Invoices(shared: Shared & { initialClientId?: string }) {
     [status, setStatus] = useState("all"),
     [year, setYear] = useState("all"),
     [editing, setEditing] = useState<Partial<Invoice> | null>(null),
-    [view, setView] = useState<string | null>(null),
+    [view, setView] = useState<string | null>(shared.initialInvoiceId || null),
     [pay, setPay] = useState<Invoice | null>(null),
     [busy, setBusy] = useState(false),
     [issue, setIssue] = useState<Invoice | null>(null);
-  const canEdit = (invoice: Invoice) => invoice.status === "draft" ||
-    (!data.settings?.verifactu_enabled && !data.fiscal.some((r) => r.invoice_id === invoice.id));
+  const canEdit = (invoice: Invoice) =>
+    invoice.status === "draft" ||
+    (!data.settings?.verifactu_enabled &&
+      !data.fiscal.some((r) => r.invoice_id === invoice.id));
   const selected = data.invoices.find((i) => i.id === view);
+  const sourceQuote =
+    selected && data.quotes.find((q) => q.invoice_id === selected.id);
   const filterClient = data.clients.find((c) => c.id === clientId);
   const rows = data.invoices
     .filter(
@@ -140,7 +205,9 @@ export function Invoices(shared: Shared & { initialClientId?: string }) {
       setIssue(null);
       await reload();
       if (!data.settings?.verifactu_enabled)
-        notify("Factura emitida. Puedes editarla mientras VeriFactu esté desactivado y no tenga registro fiscal.");
+        notify(
+          "Factura emitida. Puedes editarla mientras VeriFactu esté desactivado y no tenga registro fiscal.",
+        );
       if (data.settings?.verifactu_enabled)
         notify(
           deliveryPending
@@ -408,6 +475,11 @@ export function Invoices(shared: Shared & { initialClientId?: string }) {
           wide
         >
           <div className="document-actions">
+            {sourceQuote && (
+              <button onClick={() => shared.onQuote(sourceQuote.id)}>
+                Ver presupuesto {sourceQuote.number}
+              </button>
+            )}
             <button onClick={() => window.print()}>
               <Printer size={16} /> Imprimir / PDF
             </button>
@@ -429,7 +501,9 @@ export function Invoices(shared: Shared & { initialClientId?: string }) {
                 </button>
                 {canEdit(selected) && (
                   <button onClick={() => setEditing(selected)}>
-                    {selected.status === "draft" ? "Editar borrador" : "Editar factura"}
+                    {selected.status === "draft"
+                      ? "Editar borrador"
+                      : "Editar factura"}
                   </button>
                 )}
                 {selected.status === "draft" ? (
@@ -476,7 +550,11 @@ export function Invoices(shared: Shared & { initialClientId?: string }) {
       )}
       {pay && (
         <Modal title="Registrar cobro de factura" onClose={() => setPay(null)}>
-          <PaymentForm {...shared} invoice={data.invoices.find((i) => i.id === pay.id) || pay} onClose={() => setPay(null)} />
+          <PaymentForm
+            {...shared}
+            invoice={data.invoices.find((i) => i.id === pay.id) || pay}
+            onClose={() => setPay(null)}
+          />
         </Modal>
       )}
       {issue && (
@@ -495,7 +573,9 @@ export function Invoices(shared: Shared & { initialClientId?: string }) {
             <Badge tone={issue.environment === "test" ? "amber" : "blue"}>
               {issue.environment === "test"
                 ? "PRUEBA · sin validez fiscal"
-                : data.settings?.verifactu_enabled ? "Producción · VeriFactu" : "Sin VeriFactu"}
+                : data.settings?.verifactu_enabled
+                  ? "Producción · VeriFactu"
+                  : "Sin VeriFactu"}
             </Badge>
             {data.settings?.verifactu_enabled && (
               <p>
@@ -505,7 +585,13 @@ export function Invoices(shared: Shared & { initialClientId?: string }) {
             )}
           </div>
           <div className="modal-footer" aria-busy={busy}>
-            <button data-dismiss-modal disabled={busy} onClick={() => setIssue(null)}>Volver</button>
+            <button
+              data-dismiss-modal
+              disabled={busy}
+              onClick={() => setIssue(null)}
+            >
+              Volver
+            </button>
             <button
               className="primary"
               disabled={busy}
@@ -526,19 +612,36 @@ export function Invoices(shared: Shared & { initialClientId?: string }) {
     </>
   );
 }
-function InvoiceEditor({
+type EditableDocument = Partial<Omit<Invoice, "status">> & {
+  status?: Invoice["status"] | Quote["status"];
+  valid_until?: string | null;
+};
+export function InvoiceEditor({
   initial,
   onClose,
+  quote = false,
   ...shared
-}: Shared & { initial: Partial<Invoice>; onClose: () => void }) {
+}: Shared & {
+  initial: EditableDocument;
+  onClose: () => void;
+  quote?: boolean;
+}) {
   const { data, notify, reload } = shared;
   const [form, setForm] = useState(() => ({
       ...initial,
       id: initial.id || crypto.randomUUID(),
       version: initial.version ?? 0,
-      lines: initial.lines?.map((l) => l.historical_amount
-        ? { ...l, quantity: 1, price: l.base ?? 0, discount: 0, historical_amount: false }
-        : { ...l }),
+      lines: initial.lines?.map((l) =>
+        l.historical_amount
+          ? {
+              ...l,
+              quantity: 1,
+              price: l.base ?? 0,
+              discount: 0,
+              historical_amount: false,
+            }
+          : { ...l },
+      ),
     })),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
@@ -554,10 +657,13 @@ function InvoiceEditor({
     input?.scrollIntoView({ block: "nearest" });
   }, [lines.length]);
   const existing = !!initial.id;
-  const issued = !!initial.status && initial.status !== "draft";
+  const issued = !quote && !!initial.status && initial.status !== "draft";
   const submitting = useRef(false);
   const totals = calculateInvoice(lines, form.withholding_rate || 0);
-  function field<K extends keyof Invoice>(key: K, v: Invoice[K]) {
+  function field<K extends keyof EditableDocument>(
+    key: K,
+    v: EditableDocument[K],
+  ) {
     setForm((f) => ({ ...f, [key]: v }));
   }
   function line(index: number, key: keyof Line, value: string | number) {
@@ -580,7 +686,17 @@ function InvoiceEditor({
   }
   return (
     <Modal
-      title={issued ? "Editar factura" : existing ? "Editar borrador" : "Nueva factura"}
+      title={
+        quote
+          ? existing
+            ? "Editar presupuesto"
+            : "Nuevo presupuesto"
+          : issued
+            ? "Editar factura"
+            : existing
+              ? "Editar borrador"
+              : "Nueva factura"
+      }
       onClose={onClose}
       wide
     >
@@ -593,9 +709,15 @@ function InvoiceEditor({
           setBusy(true);
           setError("");
           try {
-            await rpc("rl_save_invoice", { p: form });
+            await rpc(quote ? "rl_save_quote" : "rl_save_invoice", { p: form });
             await reload();
-            notify(issued ? "Factura actualizada. Se conserva su número y queda registrado el cambio." : "Borrador guardado. Puedes revisarlo antes de emitir.");
+            notify(
+              quote
+                ? "Presupuesto guardado."
+                : issued
+                  ? "Factura actualizada. Se conserva su número y queda registrado el cambio."
+                  : "Borrador guardado. Puedes revisarlo antes de emitir.",
+            );
             onClose();
           } catch (e) {
             setError((e as Error).message);
@@ -606,7 +728,19 @@ function InvoiceEditor({
         }}
       >
         <div className="modal-body">
-          {issued && <div className="alert info">Editando {initial.number}. Se conserva la numeración, los cobros y el historial. El PDF original, si existe, conserva el documento importado.</div>}
+          {quote && existing && (
+            <div className="alert info">
+              Al guardar cambios, el presupuesto vuelve a borrador para revisar
+              su contenido antes de marcarlo como enviado o aceptado.
+            </div>
+          )}
+          {issued && (
+            <div className="alert info">
+              Editando {initial.number}. Se conserva la numeración, los cobros y
+              el historial. El PDF original, si existe, conserva el documento
+              importado.
+            </div>
+          )}
           <div className="form-grid three">
             <Field label="Cliente">
               <select
@@ -622,7 +756,7 @@ function InvoiceEditor({
                 ))}
               </select>
             </Field>
-            <Field label="Fecha de factura">
+            <Field label={quote ? "Fecha de presupuesto" : "Fecha de factura"}>
               <input
                 type="date"
                 required
@@ -631,11 +765,14 @@ function InvoiceEditor({
                 onChange={(e) => field("date", e.target.value)}
               />
             </Field>
-            <Field label="Vencimiento">
+            <Field label={quote ? "Válido hasta" : "Vencimiento"}>
               <input
                 type="date"
-                value={form.due_date || ""}
-                onChange={(e) => field("due_date", e.target.value)}
+                min={quote ? form.date : undefined}
+                value={(quote ? form.valid_until : form.due_date) || ""}
+                onChange={(e) =>
+                  field(quote ? "valid_until" : "due_date", e.target.value)
+                }
               />
             </Field>
             <Field label="Fecha del proyecto">
@@ -651,18 +788,23 @@ function InvoiceEditor({
                 onChange={(e) => field("location", e.target.value)}
               />
             </Field>
-            <Field label="Entorno">
-              <select
-                value={form.environment}
-                disabled={issued}
-                onChange={(e) =>
-                  field("environment", e.target.value as Invoice["environment"])
-                }
-              >
-                <option value="production">Producción</option>
-                <option value="test">Pruebas · sin validez fiscal</option>
-              </select>
-            </Field>
+            {!quote && (
+              <Field label="Entorno">
+                <select
+                  value={form.environment}
+                  disabled={issued}
+                  onChange={(e) =>
+                    field(
+                      "environment",
+                      e.target.value as Invoice["environment"],
+                    )
+                  }
+                >
+                  <option value="production">Producción</option>
+                  <option value="test">Pruebas · sin validez fiscal</option>
+                </select>
+              </Field>
+            )}
           </div>
           {form.rectifies && (
             <div className="alert info">
@@ -673,7 +815,11 @@ function InvoiceEditor({
           )}
           <div className="invoice-lines-toolbar">
             <div>
-              <h3>Conceptos de la factura</h3>
+              <h3>
+                {quote
+                  ? "Conceptos del presupuesto"
+                  : "Conceptos de la factura"}
+              </h3>
               <span aria-live="polite">
                 {lines.length} {lines.length === 1 ? "línea" : "líneas"} · Añade
                 un concepto por servicio o producto.
@@ -822,7 +968,13 @@ function InvoiceEditor({
                   onChange={(e) => field("payment_terms", e.target.value)}
                 />
               </Field>
-              <Field label="Observaciones / motivo de rectificación">
+              <Field
+                label={
+                  quote
+                    ? "Observaciones del presupuesto"
+                    : "Observaciones / motivo de rectificación"
+                }
+              >
                 <textarea
                   required={!!form.rectifies}
                   value={form.notes || ""}
@@ -841,7 +993,8 @@ function InvoiceEditor({
                 Retención IRPF<strong>−{money(totals.withholding)}</strong>
               </div>
               <div className="total">
-                Total a cobrar<strong>{money(totals.total)}</strong>
+                {quote ? "Total del presupuesto" : "Total a cobrar"}
+                <strong>{money(totals.total)}</strong>
               </div>
             </div>
           </div>
@@ -856,7 +1009,13 @@ function InvoiceEditor({
             Cancelar
           </button>
           <button className="primary" disabled={busy || !data.clients.length}>
-            {busy ? "Guardando…" : issued ? "Guardar cambios" : "Guardar borrador"}
+            {busy
+              ? "Guardando…"
+              : quote
+                ? "Guardar presupuesto"
+                : issued
+                  ? "Guardar cambios"
+                  : "Guardar borrador"}
           </button>
         </div>
       </form>
@@ -866,20 +1025,22 @@ function InvoiceEditor({
 export function InvoicePaper({
   invoice: i,
   fiscal = false,
+  quote = false,
 }: {
-  invoice: Invoice;
+  invoice: Invoice | Quote;
   fiscal?: boolean;
+  quote?: boolean;
 }) {
   const [qr, setQr] = useState("");
   useEffect(() => {
     setQr("");
-    if (fiscal)
-      void QRCode.toDataURL(qrUrl(i), {
+    if (fiscal && !quote)
+      void QRCode.toDataURL(qrUrl(i as Invoice), {
         width: 160,
         margin: 2,
         errorCorrectionLevel: "M",
       }).then(setQr);
-  }, [i.id, fiscal]);
+  }, [i.id, fiscal, quote]);
   return (
     <article className="invoice-paper" id="invoice-print">
       <div className="invoice-head">
@@ -897,16 +1058,20 @@ export function InvoicePaper({
           <span>CIF / NIF: {i.client_snapshot.tax_id}</span>
         </div>
       </div>
-      {(i.status === "draft" || i.environment === "test") && (
+      {(quote || i.status === "draft" || i.environment === "test") && (
         <div className="watermark">
-          {i.environment === "test"
-            ? "PRUEBA · SIN VALIDEZ FISCAL"
-            : "BORRADOR · SIN VALIDEZ FISCAL"}
+          {quote
+            ? "PRESUPUESTO · SIN VALIDEZ FISCAL"
+            : i.environment === "test"
+              ? "PRUEBA · SIN VALIDEZ FISCAL"
+              : "BORRADOR · SIN VALIDEZ FISCAL"}
         </div>
       )}
       <div className="invoice-heading">
         <div>
-          <h2>Factura nº {i.number || "BORRADOR"}</h2>
+          <h2>
+            {quote ? "Presupuesto" : "Factura"} nº {i.number || "BORRADOR"}
+          </h2>
           {i.invoice_type !== "F1" && (
             <b>Factura rectificativa por diferencias</b>
           )}
@@ -917,6 +1082,9 @@ export function InvoicePaper({
         </div>
         <span>A fecha de {dateLabel(i.date)}</span>
       </div>
+      {quote && "valid_until" in i && i.valid_until && (
+        <p>Válido hasta: {dateLabel(i.valid_until)}</p>
+      )}
       <table className="invoice-lines">
         <thead>
           <tr>

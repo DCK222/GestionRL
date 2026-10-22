@@ -67,6 +67,12 @@ export type Invoice = {
   environment: "test" | "production";
   payment_reviewed: boolean;
 };
+export type Quote = Omit<Invoice, "status" | "number"> & {
+  number: string;
+  status: "draft" | "sent" | "accepted" | "rejected" | "converted";
+  valid_until: string | null;
+  invoice_id: string | null;
+};
 export type Enrollment = {
   id: string;
   student_id: string | null;
@@ -160,6 +166,7 @@ export type Data = {
   clients: Client[];
   students: Student[];
   invoices: Invoice[];
+  quotes: Quote[];
   enrollments: Enrollment[];
   expenses: Expense[];
   payments: Payment[];
