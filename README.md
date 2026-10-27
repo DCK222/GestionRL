@@ -97,6 +97,12 @@ Fuentes oficiales: [información técnica AEAT](https://sede.agenciatributaria.g
 
 ## Desarrollo y comprobaciones
 
+La sección **Calendario** incluye vistas de mes y agenda, filtros, colores por tipo de evento, cliente, fecha, horario de Madrid, duración, precio total y participantes. El lugar genera un mapa de Google Maps; también se puede pegar su iframe desde «Compartir → Insertar un mapa» para fijar una ubicación exacta. Los eventos cancelados no suman horas, participantes ni importe previsto. Estos importes son planificación y no registran cobros ni facturas.
+
+Para activar su almacenamiento, ejecuta `migrations/033_calendario.sql` en el SQL Editor de Supabase sobre la instalación existente. Incluye permisos de lectura/gestión, auditoría y protección frente a cambios simultáneos. Es repetible y no modifica los datos existentes. El frontend no aplica esta migración automáticamente; si falta, el calendario muestra el aviso y el resto de la aplicación sigue disponible.
+
+Las pruebas de calendario se incluyen en `npm test`. Para comprobar el recorrido visual, inicia `node scripts/local-fixture.mjs` y ejecuta `node scripts/calendar-browser-check.mjs` en otra terminal. Usa datos ficticios y genera capturas de escritorio, móvil y tema oscuro en `test-results/calendar`.
+
 Para añadir presupuestos a una instalación existente, ejecutar `migrations/032_presupuestos.sql` en el SQL Editor de Supabase después de la migración 031, antes de desplegar este frontend. Es una actualización incremental y repetible: crea la tabla, permisos, auditoría y funciones de presupuestos, sin importar datos ni modificar facturas existentes. El despliegue del frontend no aplica SQL automáticamente.
 
 Requiere Node.js 22. Copia `.env.example` como `.env.local`, ejecuta `npm ci` y `npm run dev`. Para producción: `npm run build` y `npm start`.

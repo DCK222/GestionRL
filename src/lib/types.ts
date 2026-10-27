@@ -8,6 +8,23 @@ export type Client = {
   notes?: string;
   active?: boolean;
 };
+export type CalendarEvent = {
+  id: string;
+  version: number;
+  title: string;
+  client_id: string;
+  date: string;
+  start_time: string;
+  end_time: string;
+  location: string;
+  map_url: string;
+  price: number;
+  participants: number;
+  participant_names: string;
+  category: "workshop" | "birthday" | "school" | "meeting" | "other";
+  status: "planned" | "confirmed" | "cancelled";
+  notes: string;
+};
 export type Student = {
   id: string;
   name: string;

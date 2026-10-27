@@ -16,6 +16,7 @@ await db.exec(await readFile('scripts/schema.template','utf8')+'\ncommit;');
 await db.exec(await readFile('migrations/030_clientes_y_hoja.sql','utf8'));
 await db.exec(await readFile('migrations/031_estabilidad_facturas.sql','utf8'));
 await db.exec(await readFile('migrations/032_presupuestos.sql','utf8'));
+await db.exec(await readFile('migrations/033_calendario.sql','utf8'));
 await db.exec(`insert into auth.users values('${uid}','admin@roboticlab.internal',now());
 insert into rl_members values('admin@roboticlab.internal','admin');
 insert into rl_settings(id,company) values(1,'{"name":"Academia de pruebas","brand":"Demo","tax_id":"12345678Z","address":"Dirección ficticia","email":"admin@example.test","payment_terms":"Transferencia","exemption":"Actividad exenta"}');
@@ -23,7 +24,7 @@ insert into rl_clients(id,name,tax_id) values('${client}','Cliente de prueba','1
 set role authenticated;`);
 let failures = false;
 const user = {id:uid,aud:'authenticated',role:'authenticated',email:'admin@roboticlab.internal',email_confirmed_at:new Date().toISOString(),app_metadata:{provider:'email'},user_metadata:{},created_at:new Date().toISOString()};
-const numbers = (v) => v instanceof Date ? v.toISOString().slice(0,10) : Array.isArray(v) ? v.map(numbers) : v && typeof v==='object' ? Object.fromEntries(Object.entries(v).map(([k,x])=>[k,/^(subtotal|vat|withholding|withholding_rate|total|amount|rate|units|month_hours|pack_units|paid|advance|expected)$/.test(k)&&x!==null?Number(x):numbers(x)])) : v;
+const numbers = (v) => v instanceof Date ? v.toISOString().slice(0,10) : Array.isArray(v) ? v.map(numbers) : v && typeof v==='object' ? Object.fromEntries(Object.entries(v).map(([k,x])=>[k,/^(subtotal|vat|withholding|withholding_rate|total|amount|price|rate|units|month_hours|pack_units|paid|advance|expected)$/.test(k)&&x!==null?Number(x):numbers(x)])) : v;
 const server=createServer(async (req,res)=>{
   res.setHeader('Access-Control-Allow-Origin','http://127.0.0.1:3101');
   res.setHeader('Access-Control-Allow-Headers','*');

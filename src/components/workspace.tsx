@@ -55,6 +55,7 @@ import { Login } from "./auth";
 import { Stat, Badge, Empty, LinkCard, SectionTitle } from "./ui";
 import { Invoices } from "./invoices";
 import { Academy } from "./academy";
+import { Calendar } from "./calendar";
 import { Contacts, Expenses, Cashbook } from "./records";
 import { Configuration, Archive } from "./settings";
 export type PageKey =
@@ -62,6 +63,7 @@ export type PageKey =
   | "finance"
   | "invoices"
   | "academy"
+  | "calendar"
   | "clients"
   | "expenses"
   | "cash"
@@ -72,6 +74,7 @@ const nav = [
   { id: "finance", label: "Gestión financiera", icon: ChartNoAxesCombined },
   { id: "invoices", label: "Facturación", icon: ReceiptText },
   { id: "academy", label: "Clases e ingresos", icon: GraduationCap },
+  { id: "calendar", label: "Calendario", icon: CalendarDays },
   { id: "clients", label: "Clientes y alumnos", icon: Users },
   { id: "cash", label: "Cobros", icon: Wallet },
   { id: "expenses", label: "Gastos", icon: ArrowUpRight },
@@ -318,7 +321,7 @@ export function Workspace() {
         </div>
         <div className="nav-caption">ESPACIO DE TRABAJO</div>
         <nav>
-          {nav.slice(0, 7).map((n) => (
+          {nav.slice(0, 8).map((n) => (
             <button
               key={n.id}
               aria-label={n.label}
@@ -335,7 +338,7 @@ export function Workspace() {
         </nav>
         <div className="nav-caption">ADMINISTRACIÓN</div>
         <nav>
-          {nav.slice(7).map((n) => (
+          {nav.slice(8).map((n) => (
             <button
               key={n.id}
               aria-label={n.label}
@@ -491,6 +494,7 @@ export function Workspace() {
               )}
               {page === "expenses" && <Expenses {...shared} period={period} />}
               {page === "cash" && <Cashbook {...shared} />}
+              {page === "calendar" && <Calendar {...shared} />}
               {page === "archive" && <Archive {...shared} />}
               {page === "settings" && <Configuration {...shared} />}
             </>
