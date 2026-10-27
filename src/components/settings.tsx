@@ -510,6 +510,7 @@ export function Configuration(shared: Shared) {
       {tab === "backup" && (
         <section className="panel settings-panel">
           <h3>Exportar una copia de tus datos</h3>
+          {data.quotesUnavailable && <div className="alert" role="status">Activa los presupuestos con migrations/032_presupuestos.sql y actualiza los datos antes de descargar una copia completa.</div>}
           <p>
             Descarga un JSON con los registros de trabajo, las hojas originales,
             el historial y los documentos adjuntos. El archivo contiene
@@ -520,6 +521,7 @@ export function Configuration(shared: Shared) {
             disabled={busy}
             onClick={() =>
               void run(async () => {
+                if (data.quotesUnavailable) throw new Error("Falta activar la tabla de presupuestos. No se puede exportar una copia completa.");
                 const [documents, sheets, audit, hours] = await Promise.all([
                   readAll("rl_documents"),
                   readAll("rl_sheets"),

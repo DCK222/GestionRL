@@ -184,6 +184,7 @@ export type Data = {
   students: Student[];
   invoices: Invoice[];
   quotes: Quote[];
+  quotesUnavailable?: boolean;
   enrollments: Enrollment[];
   expenses: Expense[];
   payments: Payment[];

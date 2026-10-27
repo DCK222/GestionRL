@@ -39,7 +39,7 @@ import {
   Bar,
   Legend,
 } from "recharts";
-import { supabase, readAll } from "@/lib/supabase";
+import { supabase, readAll, readOptionalTable } from "@/lib/supabase";
 import {
   money,
   qty,
@@ -187,7 +187,7 @@ export function Workspace() {
         readAll<Data["clients"][number]>("rl_clients"),
         readAll<Data["students"][number]>("rl_students"),
         readAll<Data["invoices"][number]>("rl_invoices"),
-        readAll<Data["quotes"][number]>("rl_quotes"),
+        readOptionalTable<Data["quotes"][number]>("rl_quotes"),
         readAll<Data["enrollments"][number]>("rl_enrollments"),
         readAll<Data["expenses"][number]>("rl_expenses"),
         readAll<Data["payments"][number]>("rl_payments"),
@@ -209,7 +209,8 @@ export function Workspace() {
         clients,
         students,
         invoices,
-        quotes,
+        quotes: quotes ?? [],
+        quotesUnavailable: quotes === null,
         enrollments,
         expenses,
         payments,

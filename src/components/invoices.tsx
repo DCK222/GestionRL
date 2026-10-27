@@ -45,6 +45,7 @@ export async function downloadDocument(id: string) {
   download(data.name, bytes, data.mime);
 }
 export function Invoices(shared: Shared & { initialClientId?: string }) {
+  const [retrying, setRetrying] = useState(false);
   const [tab, setTab] = useState<"invoices" | "quotes">("invoices");
   const [invoiceId, setInvoiceId] = useState<string | undefined>();
   const [quoteId, setQuoteId] = useState<string | undefined>();
@@ -71,7 +72,7 @@ export function Invoices(shared: Shared & { initialClientId?: string }) {
             setTab("quotes");
           }}
         >
-          Presupuestos ({shared.data.quotes.length})
+          {shared.data.quotesUnavailable ? "Presupuestos · pendiente de activar" : `Presupuestos (${shared.data.quotes.length})`}
         </button>
       </div>
       {tab === "invoices" ? (
@@ -84,6 +85,20 @@ export function Invoices(shared: Shared & { initialClientId?: string }) {
             setTab("quotes");
           }}
         />
+      ) : shared.data.quotesUnavailable ? (
+        <section className="panel settings-panel">
+          <h2>Presupuestos pendientes de activar</h2>
+          <div className="alert" role="status">
+            Supabase no encuentra la tabla de presupuestos (rl_quotes).
+            Ejecuta migrations/032_presupuestos.sql en el SQL Editor del proyecto
+            Supabase de esta aplicación y pulsa «Comprobar de nuevo».
+          </div>
+          <p>La migración 033 corresponde al calendario. Las facturas, el calendario y las demás secciones siguen disponibles.</p>
+          <button disabled={retrying} onClick={async () => {
+            setRetrying(true);
+            try { await shared.reload(); } finally { setRetrying(false); }
+          }}>{retrying ? "Comprobando…" : "Comprobar de nuevo"}</button>
+        </section>
       ) : (
         <Quotes
           {...shared}
