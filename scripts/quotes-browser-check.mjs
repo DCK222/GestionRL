@@ -54,7 +54,7 @@ try {
     .locator("section.panel tbody tr")
     .filter({ hasText: "67,40" })
     .first();
-  const number = await row.locator("td").first().innerText();
+  let number = await row.locator("td").first().innerText();
   assert.match(number, /^P-\d{4}-\d{4}$/);
   await page.getByLabel("Buscar presupuestos").fill("robotica");
   await expect(row).toBeVisible();
@@ -68,6 +68,13 @@ try {
   await expect(page.locator(".invoice-paper .watermark")).toHaveText(
     "PRESUPUESTO · SIN VALIDEZ FISCAL",
   );
+  await page.getByRole("button", { name: "Editar presupuesto", exact: true }).click();
+  await expect(page.getByLabel("Número de presupuesto", { exact: true })).toHaveValue(number);
+  await page.getByLabel("Número de presupuesto", { exact: true }).fill("25");
+  await page.getByRole("button", { name: "Guardar presupuesto", exact: true }).click();
+  number = number.replace(/\d+$/, "0025");
+  await expect(page.getByRole("dialog")).toHaveCount(1);
+  await expect(page.locator(".invoice-paper h2")).toHaveText(`Presupuesto nº ${number}`);
   await page.getByRole("button", { name: "Marcar enviado" }).click();
   await expect(page.locator("dialog .alert")).toContainText("Estado: Enviado");
   await page.getByRole("button", { name: "Marcar aceptado" }).click();

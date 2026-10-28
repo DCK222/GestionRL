@@ -105,6 +105,10 @@ Las pruebas de calendario se incluyen en `npm test`. Para comprobar el recorrido
 
 Para añadir presupuestos a una instalación existente, ejecutar `migrations/032_presupuestos.sql` en el SQL Editor de Supabase después de la migración 031, antes de desplegar este frontend. Es una actualización incremental y repetible: crea la tabla, permisos, auditoría y funciones de presupuestos, sin importar datos ni modificar facturas existentes. El despliegue del frontend no aplica SQL automáticamente.
 
+Para comenzar los presupuestos de 2026 en `P-2026-0012`, ejecutar después `migrations/034_presupuestos_desde_12.sql`. El siguiente será el 13 y así sucesivamente. Si la serie ya ha superado el 12, conserva su siguiente número. No renumera presupuestos guardados ni cambia las series de facturas; los demás años mantienen su inicio en 1. Es repetible y debe aplicarse también en instalaciones nuevas.
+
+Para editar la numeración, aplicar también `migrations/035_numeros_presupuestos_editables.sql` antes de desplegar el frontend. El campo **Número de presupuesto** acepta un número positivo (`12`) o el formato completo (`P-2026-0012`), con el mismo año que la fecha. Vacío asigna un número automático al crear o conserva el actual al editar. Se impiden duplicados y un número manual superior adelanta el siguiente automático. Los presupuestos convertidos siguen bloqueados para conservar el vínculo con su factura.
+
 Si Supabase devuelve `PGRST205` porque falta `rl_quotes`, la aplicación mantiene disponibles las facturas, el calendario y las demás secciones. La pestaña Presupuestos indica la migración pendiente y permite comprobar de nuevo tras aplicarla. Otros errores de lectura siguen siendo visibles. No se permite exportar una copia completa mientras falte esta tabla. Prueba de regresión local: `node scripts/missing-quotes-browser-check.mjs`, con el servidor `scripts/local-fixture.mjs` iniciado.
 
 Requiere Node.js 22. Copia `.env.example` como `.env.local`, ejecuta `npm ci` y `npm run dev`. Para producción: `npm run build` y `npm start`.

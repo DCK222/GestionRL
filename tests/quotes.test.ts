@@ -22,6 +22,27 @@ test("presupuestos: numeración propia, validación, estados, conversión atómi
     const migration = await readFile("migrations/032_presupuestos.sql", "utf8");
     await db.exec(migration);
     await db.exec(migration);
+    const numbering = await readFile(
+      "migrations/034_presupuestos_desde_12.sql",
+      "utf8",
+    );
+    await db.exec(numbering);
+    await db.exec(numbering);
+    assert.equal(
+      (await db.query<{ next_value: number }>(
+        "select next_value from rl_sequences where year=2026 and series='P' and environment='production'",
+      )).rows[0].next_value,
+      12,
+    );
+    // Una instalación con la serie ya iniciada también debe avanzar hasta el 12.
+    await db.exec("update rl_sequences set next_value=2 where year=2026 and series='P' and environment='production'");
+    await db.exec(numbering);
+    const editableNumbers = await readFile(
+      "migrations/035_numeros_presupuestos_editables.sql",
+      "utf8",
+    );
+    await db.exec(editableNumbers);
+    await db.exec(editableNumbers);
     const admin = randomUUID(),
       viewer = randomUUID(),
       unknown = randomUUID(),
@@ -59,9 +80,9 @@ test("presupuestos: numeración propia, validación, estados, conversión atómi
       exemption: "Actividad exenta",
       notes: "Propuesta de robótica",
       payment_terms: "Transferencia a 30 días",
-      // Supplied totals, numbering, state and invoice links must never be trusted.
+      // Supplied totals, state and invoice links must never be trusted.
       total: 1,
-      number: "F-FAKE",
+      number: "",
       status: "converted",
       invoice_id: randomUUID(),
       lines: [
@@ -98,7 +119,7 @@ test("presupuestos: numeración propia, validación, estados, conversión atómi
       one("select rl_convert_quote($1,$2) id", [q.id, q.version]);
     await save(form);
     let q = await get();
-    assert.equal(q.number, "P-2026-0001");
+    assert.equal(q.number, "P-2026-0012");
     assert.equal(q.status, "draft");
     assert.equal(q.invoice_id, null);
     assert.equal(q.subtotal, "65.97");
@@ -115,6 +136,13 @@ test("presupuestos: numeración propia, validación, estados, conversión atómi
       { valid_until: "2025-12-31" },
       { lines: [{ ...form.lines[0], price: -1 }] },
       { lines: [{ ...form.lines[0], quantity: "Infinity" }] },
+      { number: "F-FAKE" },
+      { number: "P-2025-0012" },
+      { number: "0" },
+      { number: "-1" },
+      { number: "12.5" },
+      { number: "2147483647" },
+      { number: "99999999999" },
     ]) {
       await assert.rejects(() =>
         save({ ...form, version: q.version, ...patch }),
@@ -130,7 +158,14 @@ test("presupuestos: numeración propia, validación, estados, conversión atómi
     await save({ ...form, version: q.version, notes: "Revisión" });
     q = await get();
     assert.equal(q.status, "draft");
-    assert.equal(q.number, "P-2026-0001");
+    assert.equal(q.number, "P-2026-0012");
+    await save({ ...form, version: q.version, number: " 00020 ", notes: "Revisión" });
+    await assert.rejects(
+      () => save({ ...form, version: q.version, number: "21" }),
+      /ha cambiado/,
+    );
+    q = await get();
+    assert.equal(q.number, "P-2026-0020");
     await state(q, "accepted");
     q = await get();
     // Changing contacts after acceptance must not rewrite the accepted snapshots.
@@ -171,11 +206,11 @@ test("presupuestos: numeración propia, validación, estados, conversión atómi
     ]) {
       assert.deepEqual(i[field], q[field], field);
     }
-    assert.match(i.notes, /Revisión\nPresupuesto origen: P-2026-0001/);
+    assert.match(i.notes, /Revisión\nPresupuesto origen: P-2026-0020/);
     assert.equal((await get()).invoice_id, i.id);
     assert.equal((await get()).status, "converted");
     await assert.rejects(
-      async () => save({ ...form, version: (await get()).version }),
+      async () => save({ ...form, version: (await get()).version, number: "25" }),
       /convertido/,
     );
     await assert.rejects(async () => state(await get(), "draft"), /convertido/);
@@ -190,9 +225,26 @@ test("presupuestos: numeración propia, validación, estados, conversión atómi
     assert.match(invoiceNumber, /^F-\d{4}-0001$/);
 
     const second = { ...form, id: randomUUID(), status: "draft" };
+    // Reaplicar la migración conserva los números y nunca retrocede la serie.
+    await db.exec("reset role");
+    await db.exec(numbering);
+    await role(admin);
+    assert.equal((await get()).number, "P-2026-0020");
+    await assert.rejects(
+      () => save({ ...second, number: "P-2026-20" }),
+      /Ya existe un presupuesto/,
+    );
     await save(second);
-    const next = await get(second.id);
-    assert.equal(next.number, "P-2026-0002");
+    let next = await get(second.id);
+    assert.equal(next.number, "P-2026-0021");
+    await assert.rejects(
+      () => save({ ...second, version: next.version, number: "20" }),
+      /Ya existe un presupuesto/,
+    );
+    assert.equal((await get(second.id)).number, "P-2026-0021");
+    await save({ ...second, version: next.version, number: "P-2026-0015" });
+    next = await get(second.id);
+    assert.equal(next.number, "P-2026-0015");
     await state(next, "rejected");
     await assert.rejects(
       () => convert({ ...next, version: next.version + 1 }),
@@ -201,6 +253,7 @@ test("presupuestos: numeración propia, validación, estados, conversión atómi
     const stale = { ...form, id: randomUUID(), valid_until: "2026-01-02" };
     await save(stale);
     const expired = await get(stale.id);
+    assert.equal(expired.number, "P-2026-0022");
     await assert.rejects(() => convert(expired), /caducado/);
     await assert.rejects(() => state(expired, "accepted"), /caducado/);
     assert.ok(
@@ -214,7 +267,7 @@ test("presupuestos: numeración propia, validación, estados, conversión atómi
     await role(viewer);
     assert.equal((await one("select count(*)::int n from rl_quotes")).n, 3);
     await assert.rejects(
-      () => save({ ...form, id: randomUUID() }),
+      () => save({ ...second, version: next.version + 1, number: "30" }),
       /Acceso denegado/,
     );
     await assert.rejects(() => convert(q), /Acceso denegado/);

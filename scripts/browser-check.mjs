@@ -14,6 +14,8 @@ await db.exec(
 await db.exec(await fs.readFile("migrations/030_clientes_y_hoja.sql", "utf8"));
 await db.exec(await fs.readFile("migrations/031_estabilidad_facturas.sql", "utf8"));
 await db.exec(await fs.readFile("migrations/032_presupuestos.sql", "utf8"));
+await db.exec(await fs.readFile("migrations/034_presupuestos_desde_12.sql", "utf8"));
+await db.exec(await fs.readFile("migrations/035_numeros_presupuestos_editables.sql", "utf8"));
 const admin = (
   await db.query(
     "select id from auth.users where email='admin@roboticlab.internal'",

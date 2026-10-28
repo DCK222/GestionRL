@@ -757,6 +757,24 @@ export function InvoiceEditor({
             </div>
           )}
           <div className="form-grid three">
+            {quote && (
+              <Field label="Número de presupuesto">
+                <input
+                  value={form.number || ""}
+                  maxLength={17}
+                  placeholder="Automático"
+                  aria-label="Número de presupuesto"
+                  aria-describedby="quote-number-help"
+                  onChange={(e) => field("number", e.target.value)}
+                />
+                <small id="quote-number-help">
+                  Escribe un número (12) o el formato completo (P-2026-0012).
+                  {existing
+                    ? " Si lo dejas vacío, se conserva el actual."
+                    : " Déjalo vacío para asignarlo automáticamente."}
+                </small>
+              </Field>
+            )}
             <Field label="Cliente">
               <select
                 required
